@@ -1,0 +1,43 @@
+[package]
+name = "proc-daemon"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license = "Apache-2.0"
+
+authors = [
+    "James Gober <codeca@jamesgober.dev>"
+]
+
+description = "A foundational framework for building high-performance, resilient daemon services in Rust. Handles all the boilerplate for signal handling, graceful shutdown, logging, and configuration."
+
+keywords = [
+    "daemon",
+    "cross-platform",
+    "systemd",
+    "process",
+    "background",
+    "service",
+    "framework", 
+    "tokio", 
+    "async", 
+    "shutdown", 
+    "resilience"
+]
+
+categories = [
+    "os::unix-apis", 
+    "os::windows-apis", 
+    "development-tools::cargo-plugins",
+    "network-programming",
+    "concurrency",
+    "asynchronous"
+]
+
+documentation = "https://docs.rs/proc-daemon"
+repository = "https://github.com/jamesgober/proc-daemon"
+homepage = "https://github.com/jamesgober/proc-daemon"
+
+
+[dependencies]
+thiserror = "1.0"
