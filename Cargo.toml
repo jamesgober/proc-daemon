@@ -30,8 +30,7 @@ categories = [
     "os::windows-apis", 
     "development-tools::cargo-plugins",
     "network-programming",
-    "concurrency",
-    "asynchronous"
+    "concurrency"
 ]
 
 documentation = "https://docs.rs/proc-daemon"
