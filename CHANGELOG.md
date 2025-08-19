@@ -28,6 +28,6 @@ Initial pre-dev release for backup.
 - `README` file.
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/0.1.0...HEAD
-[0.2.0]: https://github.com/jamesgober/proc-daemon/compare/0.1.0...v0.2.0
-[0.1.0]: https://github.com/jamesgober/proc-forge/releases/tag/0.1.0
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/jamesgober/proc-forge/releases/tag/v0.1.0
