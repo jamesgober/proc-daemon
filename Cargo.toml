@@ -16,13 +16,7 @@ keywords = [
     "cross-platform",
     "systemd",
     "process",
-    "background",
-    "service",
-    "framework", 
-    "tokio", 
-    "async", 
-    "shutdown", 
-    "resilience"
+    "framework"
 ]
 
 categories = [
