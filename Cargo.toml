@@ -40,4 +40,4 @@ homepage = "https://github.com/jamesgober/proc-daemon"
 
 
 [dependencies]
-thiserror = "1.0"
+
