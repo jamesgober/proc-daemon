@@ -91,8 +91,8 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Wdk::System::SystemInformation::{
-    NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS, SYSTEM_PROCESS_INFORMATION,
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
@@ -595,19 +595,26 @@ impl ResourceTracker {
                 )
             })?;
 
-        // Get thread count using Windows API
-        let mut system_info = unsafe { std::mem::zeroed::<SYSTEM_PROCESS_INFORMATION>() };
-        let status = unsafe {
-            NtQuerySystemInformation(
-                SYSTEM_INFORMATION_CLASS::SystemProcessInformation,
-                &mut system_info as *mut _ as *mut _,
-                size_of::<SYSTEM_PROCESS_INFORMATION>() as u32,
-                std::ptr::null_mut(),
-            )
-        };
+        // Get thread count by enumerating threads using ToolHelp snapshot
+        unsafe {
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+            if snapshot.0 != -1i32 as isize {
+                let mut entry: THREADENTRY32 = std::mem::zeroed();
+                entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
 
-        if status.is_ok() {
-            thread_count = system_info.NumberOfThreads;
+                if Thread32First(snapshot, &mut entry).as_bool() {
+                    loop {
+                        if entry.th32OwnerProcessID == pid {
+                            thread_count = thread_count.saturating_add(1);
+                        }
+                        if !Thread32Next(snapshot, &mut entry).as_bool() {
+                            break;
+                        }
+                    }
+                }
+
+                let _ = CloseHandle(snapshot);
+            }
         }
 
         // Get CPU times
