@@ -64,17 +64,24 @@
 //! };
 //! ```
 
+#[allow(unused_imports)]
 use crate::error::{Error, Result};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
+// Runtime-specific JoinHandle types
 #[cfg(feature = "tokio")]
+#[allow(unused_imports)]
 use tokio::task::JoinHandle;
 #[cfg(feature = "tokio")]
+#[allow(unused_imports)]
 use tokio::time;
-#[cfg(feature = "async-std")]
+#[cfg(all(feature = "async-std", not(feature = "tokio")))]
 use async_std::task::JoinHandle as AsyncJoinHandle;
+#[cfg(not(any(feature = "tokio", feature = "async-std")))]
+use std::thread::JoinHandle;
 
+// OS-specific imports
 #[cfg(target_os = "linux")]
 use std::fs::File;
 #[cfg(target_os = "linux")]
@@ -84,13 +91,16 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+use windows::Win32::System::Threading::{PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, OpenProcess, GetProcessTimes};
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+use windows::Win32::System::SystemInformation::{NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS, SYSTEM_PROCESS_INFORMATION, SystemProcessInformation};
+
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use std::mem::size_of;
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
-#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION};
-#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::System::ProcessStatus;
+use windows::Win32::Foundation::{CloseHandle, HANDLE, FILETIME};
 
 /// Represents the current resource usage of the process
 #[derive(Debug, Clone)]
@@ -153,6 +163,7 @@ impl ResourceUsage {
 }
 
 /// Provides resource tracking functionality for the current process
+#[allow(dead_code)]
 pub struct ResourceTracker {
     /// The interval at which to sample resource usage
     sample_interval: Duration,
@@ -167,7 +178,12 @@ pub struct ResourceTracker {
     max_history: usize,
 
     /// Background task handle
-    task_handle: Option<JoinHandle<()>>,
+    #[cfg(feature = "tokio")]
+    task_handle: Option<tokio::task::JoinHandle<()>>,
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    task_handle: Option<async_std::task::JoinHandle<()>>,
+    #[cfg(not(any(feature = "tokio", feature = "async-std")))]
+    task_handle: Option<std::thread::JoinHandle<()>>,
 
     /// The process ID being monitored (usually self)
     pid: u32,
@@ -288,7 +304,7 @@ impl ResourceTracker {
                         hist.push(usage);
 
                         // Trim history if needed
-                        if hist.len() > self.max_history {
+                        if hist.len() > max_history {
                             hist.remove(0);
                         }
                     }
@@ -337,16 +353,17 @@ impl ResourceTracker {
     }
 
     /// Samples the resource usage for the given process ID
+    #[allow(unused_variables, dead_code)]
     fn sample_resource_usage(
         pid: u32,
-        _last_cpu_time: &mut f64,
-        _last_timestamp: &mut Instant,
+        last_cpu_time: &mut f64,
+        last_timestamp: &mut Instant,
     ) -> Result<ResourceUsage> {
         #[cfg(target_os = "linux")]
         {
             // On Linux, read from /proc filesystem
             let memory = Self::get_memory_linux(pid)?;
-            let (cpu, threads) = Self::get_cpu_linux(pid, _last_cpu_time, _last_timestamp)?;
+            let (cpu, threads) = Self::get_cpu_linux(pid, last_cpu_time, last_timestamp)?;
             Ok(ResourceUsage::new(memory, cpu, threads))
         }
 
@@ -362,7 +379,7 @@ impl ResourceTracker {
         {
             // On Windows, use Windows API
             let memory = Self::get_memory_windows(pid)?;
-            let (cpu, threads) = Self::get_cpu_windows(pid, _last_cpu_time, _last_timestamp)?;
+            let (cpu, threads) = Self::get_cpu_windows(pid, last_cpu_time, last_timestamp)?;
             Ok(ResourceUsage::new(memory, cpu, threads))
         }
 
@@ -465,6 +482,7 @@ impl ResourceTracker {
     }
 
     #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
     fn get_memory_macos(pid: u32) -> Result<u64> {
         // Use ps command to get memory usage on macOS
         let output = Command::new("ps")
@@ -486,6 +504,7 @@ impl ResourceTracker {
     }
 
     #[cfg(target_os = "macos")]
+    #[allow(dead_code)]
     fn get_cpu_macos(pid: u32) -> Result<(f64, u32)> {
         // Get CPU percentage using ps
         let output = Command::new("ps")
@@ -515,11 +534,6 @@ impl ResourceTracker {
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
     fn get_memory_windows(pid: u32) -> Result<u64> {
-        use windows::Win32::Foundation::CloseHandle;
-        use windows::Win32::System::ProcessStatus::GetProcessMemoryInfo;
-        use windows::Win32::System::ProcessStatus::PROCESS_MEMORY_COUNTERS;
-        use windows::Win32::System::Threading::OpenProcess;
-        use windows::Win32::System::Threading::PROCESS_QUERY_INFORMATION;
 
         let mut pmc = PROCESS_MEMORY_COUNTERS::default();
         let handle =
@@ -558,9 +572,6 @@ impl ResourceTracker {
         last_cpu_time: &mut f64,
         last_timestamp: &mut Instant,
     ) -> Result<(f64, u32)> {
-        use windows::Win32::Foundation::{CloseHandle, FILETIME};
-        use windows::Win32::System::Threading::GetProcessTimes;
-        use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION};
 
         let mut cpu_percent = 0.0;
         let mut thread_count = 0;
@@ -573,18 +584,18 @@ impl ResourceTracker {
                 )
             })?;
 
-        // Get thread count
-        let mut system_info = std::mem::zeroed::<ProcessStatus::SYSTEM_PROCESS_INFORMATION>();
+        // Get thread count using Windows API
+        let mut system_info = unsafe { std::mem::zeroed::<SYSTEM_PROCESS_INFORMATION>() };
         let status = unsafe {
-            ProcessStatus::NtQuerySystemInformation(
-                ProcessStatus::SystemProcessInformation,
+            NtQuerySystemInformation(
+                SystemProcessInformation, // Use the named constant
                 &mut system_info as *mut _ as *mut _,
-                std::mem::size_of::<ProcessStatus::SYSTEM_PROCESS_INFORMATION>() as u32,
+                size_of::<SYSTEM_PROCESS_INFORMATION>() as u32,
                 std::ptr::null_mut(),
             )
         };
 
-        if status >= 0 {
+        if status.is_ok() {
             thread_count = system_info.NumberOfThreads;
         }
 
@@ -604,9 +615,9 @@ impl ResourceTracker {
             )
         };
 
-        if result.as_bool() {
-            let kernel_ns = filetime_to_ns(&kernel_time);
-            let user_ns = filetime_to_ns(&user_time);
+        if result.is_ok() {
+            let kernel_ns = Self::filetime_to_ns(&kernel_time);
+            let user_ns = Self::filetime_to_ns(&user_time);
             let total_time = (kernel_ns + user_ns) as f64 / 1_000_000_000.0; // Convert to seconds
 
             let now = Instant::now();
@@ -658,7 +669,7 @@ impl Drop for ResourceTracker {
             // For async-std, dropping the handle is sufficient
             // as it cancels the associated task
             #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-            let _ = handle; // Explicitly use handle to avoid unused variable warning
+            drop(handle); // Explicitly drop handle to ensure it's used
         }
     }
 }

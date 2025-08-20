@@ -197,6 +197,7 @@ pub enum ErrorCode {
     RuntimeAsyncError = 6001,
     LockFailed = 6002,
     RuntimeSpawnError = 6003,
+    MissingRuntime = 6004,
 
     // Resource errors: 7000-7999
     ResourceExhaustedMemory = 7000,
@@ -262,6 +263,7 @@ impl ErrorCode {
             Self::RuntimeAsyncError => "RUNTIME_ASYNC_ERROR",
             Self::LockFailed => "LOCK_FAILED",
             Self::RuntimeSpawnError => "RUNTIME_SPAWN_ERROR",
+            Self::MissingRuntime => "MISSING_RUNTIME",
 
             // Resource errors
             Self::ResourceExhaustedMemory => "RESOURCE_EXHAUSTED_MEMORY",

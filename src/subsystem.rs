@@ -476,14 +476,15 @@ impl SubsystemManager {
         info!("Stopping {} subsystems", subsystem_ids.len());
 
         // Stop all subsystems concurrently
-        let _stop_tasks: Vec<_> = subsystem_ids
+        #[allow(unused_variables)]
+        let stop_tasks: Vec<_> = subsystem_ids
             .into_iter()
             .map(|id| self.stop_subsystem(id))
             .collect();
 
         #[cfg(feature = "tokio")]
         {
-            let results = futures::future::join_all(_stop_tasks).await;
+            let results = futures::future::join_all(stop_tasks).await;
             for (i, result) in results.into_iter().enumerate() {
                 if let Err(e) = result {
                     error!(subsystem_index = i, error = %e, "Failed to stop subsystem");
@@ -493,7 +494,7 @@ impl SubsystemManager {
 
         #[cfg(all(feature = "async-std", not(feature = "tokio")))]
         {
-            for task in _stop_tasks {
+            for task in stop_tasks {
                 if let Err(e) = task.await {
                     error!(error = %e, "Failed to stop subsystem");
                 }
@@ -589,7 +590,8 @@ impl SubsystemManager {
         // Process data without holding the lock
         let mut running_count = 0;
         let mut failed_count = 0;
-        let mut _stopped_count = 0; // Using underscore prefix for variable used in match but not in struct
+        #[allow(unused_variables)]
+        let mut stopped_count = 0; // Not used in struct but needed for state tracking
         let mut stopping_count = 0;
 
         // Collect stats from the metadata
@@ -597,14 +599,14 @@ impl SubsystemManager {
             match metadata.state {
                 SubsystemState::Running => running_count += 1,
                 SubsystemState::Failed => failed_count += 1,
-                SubsystemState::Stopped => _stopped_count += 1,
+                SubsystemState::Stopped => stopped_count += 1,
                 SubsystemState::Stopping => stopping_count += 1,
                 _ => {} // Other states not counted specially
             }
         }
 
         // Create a Vec from the pooled vector
-        let subsystems_vec: Vec<SubsystemMetadata> = subsystem_metadata.iter().cloned().collect();
+        let subsystems_vec = subsystem_metadata.iter().cloned().collect::<Vec<SubsystemMetadata>>();
 
         // Return the pooled vector to the pool by dropping it
         drop(subsystem_metadata);
@@ -1111,7 +1113,8 @@ mod tests {
             // Create a closure-based subsystem with faster response to shutdown
             let name = "closure_test".to_string();
             let closure_subsystem = Box::new(move |mut shutdown: ShutdownHandle| {
-                let _name = name.clone(); // Keep the name for potential future use
+                // Using name in scope to move it into the closure
+            let _ = name.clone();
                 Box::pin(async move {
                     loop {
                         #[cfg(feature = "tokio")]
