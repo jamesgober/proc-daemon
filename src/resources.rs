@@ -98,9 +98,7 @@ use windows::Win32::System::SystemInformation::{
     SYSTEM_PROCESS_INFORMATION,
 };
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::System::Threading::{
-    GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION,
-};
+use windows::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION};
 
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use std::mem::size_of;
