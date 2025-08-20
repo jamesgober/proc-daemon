@@ -12,7 +12,7 @@ use crate::ShutdownReason;
 // No need for these imports
 // use crate::config::Config;
 // use crate::daemon::Daemon;
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorCode, Result};
 use crate::shutdown::ShutdownCoordinator;
 
 /// Cross-platform signal handler that coordinates shutdown.
@@ -90,8 +90,9 @@ impl SignalHandler {
 
         #[cfg(not(any(feature = "tokio", feature = "async-std")))]
         {
-            return Err(Error::MissingRuntime(
-                "No runtime available for signal handling".into(),
+            return Err(Error::runtime_with_code(
+                ErrorCode::MissingRuntime,
+                "No runtime available for signal handling",
             ));
         }
 

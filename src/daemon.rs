@@ -74,13 +74,15 @@ impl Daemon {
         }
 
         // Start signal handling in the background
-        let signal_task = self.signal_handler.as_ref().map_or_else(
-            || None,
-            |signal_handler| {
-                let handler = Arc::clone(signal_handler);
-                Some(Self::spawn_signal_handler(handler))
-            },
-        );
+        // Only spawn when a supported async runtime is enabled.
+        #[cfg(any(feature = "tokio", feature = "async-std"))]
+        let signal_task = self.signal_handler.as_ref().map(|signal_handler| {
+            let handler = Arc::clone(signal_handler);
+            Self::spawn_signal_handler(handler)
+        });
+
+        #[cfg(not(any(feature = "tokio", feature = "async-std")))]
+        let signal_task: Option<()> = None;
 
         // Wait for shutdown to be initiated
         info!("Daemon started successfully, waiting for shutdown signal");
@@ -123,8 +125,16 @@ impl Daemon {
         }
 
         // Wait for signal handler task to complete
+        #[cfg(any(feature = "tokio", feature = "async-std"))]
         if let Some(task) = signal_task {
             #[cfg(feature = "tokio")]
+            {
+                if let Err(e) = task.await {
+                    warn!(error = %e, "Signal handler task failed");
+                }
+            }
+
+            #[cfg(all(feature = "async-std", not(feature = "tokio")))]
             {
                 if let Err(e) = task.await {
                     warn!(error = %e, "Signal handler task failed");
