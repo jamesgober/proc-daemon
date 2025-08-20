@@ -274,34 +274,43 @@ impl SubsystemManager {
     /// Panics if the internal mutex is poisoned.
     pub fn register_closure<F>(&self, closure_subsystem: F, name: &str) -> SubsystemId
     where
-        F: Fn(ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+        F: Fn(ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+            + Send
+            + Sync
+            + 'static,
     {
         // Create a ClosureSubsystem wrapper
         struct ClosureSubsystemWrapper<F> {
             name: String,
             func: F,
         }
-        
-        impl<F> Subsystem for ClosureSubsystemWrapper<F> 
-        where 
-            F: Fn(ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+
+        impl<F> Subsystem for ClosureSubsystemWrapper<F>
+        where
+            F: Fn(ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
+                + Send
+                + Sync
+                + 'static,
         {
-            fn run(&self, shutdown: ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+            fn run(
+                &self,
+                shutdown: ShutdownHandle,
+            ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
                 (self.func)(shutdown)
             }
-            
+
             fn name(&self) -> &str {
                 &self.name
             }
         }
-        
+
         // Create the wrapper with the string pool name
         let pooled_name = self.string_pool.get_with_value(name).to_string();
         let wrapper = ClosureSubsystemWrapper {
             name: pooled_name,
             func: closure_subsystem,
         };
-        
+
         // Register the wrapped subsystem
         self.register(wrapper)
     }
@@ -606,7 +615,10 @@ impl SubsystemManager {
         }
 
         // Create a Vec from the pooled vector
-        let subsystems_vec = subsystem_metadata.iter().cloned().collect::<Vec<SubsystemMetadata>>();
+        let subsystems_vec = subsystem_metadata
+            .iter()
+            .cloned()
+            .collect::<Vec<SubsystemMetadata>>();
 
         // Return the pooled vector to the pool by dropping it
         drop(subsystem_metadata);
@@ -1118,7 +1130,7 @@ mod tests {
             let name = "closure_test".to_string();
             let closure_subsystem = Box::new(move |mut shutdown: ShutdownHandle| {
                 // Using name in scope to move it into the closure
-            let _ = name.clone();
+                let _ = name.clone();
                 Box::pin(async move {
                     loop {
                         #[cfg(feature = "tokio")]

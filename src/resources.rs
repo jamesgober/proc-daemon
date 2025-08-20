@@ -70,16 +70,16 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 // Runtime-specific JoinHandle types
+#[cfg(all(feature = "async-std", not(feature = "tokio")))]
+use async_std::task::JoinHandle as AsyncJoinHandle;
+#[cfg(not(any(feature = "tokio", feature = "async-std")))]
+use std::thread::JoinHandle;
 #[cfg(feature = "tokio")]
 #[allow(unused_imports)]
 use tokio::task::JoinHandle;
 #[cfg(feature = "tokio")]
 #[allow(unused_imports)]
 use tokio::time;
-#[cfg(all(feature = "async-std", not(feature = "tokio")))]
-use async_std::task::JoinHandle as AsyncJoinHandle;
-#[cfg(not(any(feature = "tokio", feature = "async-std")))]
-use std::thread::JoinHandle;
 
 // OS-specific imports
 #[cfg(target_os = "linux")]
@@ -93,14 +93,20 @@ use std::process::Command;
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::System::Threading::{PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, OpenProcess, GetProcessTimes};
+use windows::Win32::System::SystemInformation::{
+    NtQuerySystemInformation, SystemProcessInformation, SYSTEM_INFORMATION_CLASS,
+    SYSTEM_PROCESS_INFORMATION,
+};
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::System::SystemInformation::{NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS, SYSTEM_PROCESS_INFORMATION, SystemProcessInformation};
+use windows::Win32::System::Threading::{
+    GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_VM_READ,
+};
 
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use std::mem::size_of;
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::Foundation::{CloseHandle, HANDLE, FILETIME};
+use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
 
 /// Represents the current resource usage of the process
 #[derive(Debug, Clone)]
@@ -318,7 +324,7 @@ impl ResourceTracker {
     }
 
     /// Stops the resource tracker, cancelling any ongoing monitoring task.
-    /// 
+    ///
     /// For tokio, this aborts the task and awaits its completion.
     #[cfg(all(feature = "tokio", not(feature = "async-std")))]
     pub async fn stop(&mut self) {
@@ -536,7 +542,6 @@ impl ResourceTracker {
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
     fn get_memory_windows(pid: u32) -> Result<u64> {
-
         let mut pmc = PROCESS_MEMORY_COUNTERS::default();
         let handle =
             unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, false, pid) }.map_err(|e| {
@@ -562,10 +567,12 @@ impl ResourceTracker {
 
         Ok(pmc.WorkingSetSize)
     }
-    
+
     #[cfg(all(target_os = "windows", not(feature = "windows-monitoring")))]
     fn get_memory_windows(_pid: u32) -> Result<u64> {
-        Err(Error::runtime("Windows monitoring not enabled. Enable the 'windows-monitoring' feature".to_string()))
+        Err(Error::runtime(
+            "Windows monitoring not enabled. Enable the 'windows-monitoring' feature".to_string(),
+        ))
     }
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
@@ -574,7 +581,6 @@ impl ResourceTracker {
         last_cpu_time: &mut f64,
         last_timestamp: &mut Instant,
     ) -> Result<(f64, u32)> {
-
         let mut cpu_percent = 0.0;
         let mut thread_count = 0;
 
@@ -643,14 +649,16 @@ impl ResourceTracker {
 
         Ok((cpu_percent, thread_count))
     }
-    
+
     #[cfg(all(target_os = "windows", not(feature = "windows-monitoring")))]
     fn get_cpu_windows(
         _pid: u32,
         _last_cpu_time: &mut f64,
         _last_timestamp: &mut Instant,
     ) -> Result<(f64, u32)> {
-        Err(Error::runtime("Windows monitoring not enabled. Enable the 'windows-monitoring' feature".to_string()))
+        Err(Error::runtime(
+            "Windows monitoring not enabled. Enable the 'windows-monitoring' feature".to_string(),
+        ))
     }
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
