@@ -99,14 +99,13 @@ use windows::Win32::System::SystemInformation::{
 };
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use windows::Win32::System::Threading::{
-    GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_VM_READ,
+    GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION,
 };
 
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use std::mem::size_of;
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
+use windows::Win32::Foundation::{CloseHandle, FILETIME};
 
 /// Represents the current resource usage of the process
 #[derive(Debug, Clone)]
@@ -401,9 +400,9 @@ impl ResourceTracker {
     #[cfg(target_os = "linux")]
     fn get_memory_linux(pid: u32) -> Result<u64> {
         // Read memory information from /proc/[pid]/status
-        let path = format!("/proc/{}/status", pid);
+        let path = format!("/proc/{pid}/status");
         let file = File::open(&path).map_err(|e| {
-            Error::io_with_source(format!("Failed to open {} for memory stats", path), e)
+            Error::io_with_source(format!("Failed to open {path} for memory stats"), e)
         })?;
 
         let reader = BufReader::new(file);
@@ -436,9 +435,9 @@ impl ResourceTracker {
         last_timestamp: &mut Instant,
     ) -> Result<(f64, u32)> {
         // Read CPU information from /proc/[pid]/stat
-        let path = format!("/proc/{}/stat", pid);
+        let path = format!("/proc/{pid}/stat");
         let file = File::open(&path).map_err(|e| {
-            Error::io_with_source(format!("Failed to open {} for CPU stats", path), e)
+            Error::io_with_source(format!("Failed to open {path} for CPU stats"), e)
         })?;
 
         let reader = BufReader::new(file);
@@ -460,10 +459,10 @@ impl ResourceTracker {
                 // Parse CPU times (fields 14-17: utime, stime, cutime, cstime)
                 let utime = parts[13].parse::<f64>().unwrap_or(0.0);
                 let stime = parts[14].parse::<f64>().unwrap_or(0.0);
-                let cutime = parts[15].parse::<f64>().unwrap_or(0.0);
-                let cstime = parts[16].parse::<f64>().unwrap_or(0.0);
+                let child_utime = parts[15].parse::<f64>().unwrap_or(0.0);
+                let child_stime = parts[16].parse::<f64>().unwrap_or(0.0);
 
-                let current_cpu_time = utime + stime + cutime + cstime;
+                let current_cpu_time = utime + stime + child_utime + child_stime;
                 let now = Instant::now();
 
                 // Calculate CPU usage percentage
@@ -471,7 +470,7 @@ impl ResourceTracker {
                     let time_diff = now.duration_since(*last_timestamp).as_secs_f64();
                     if time_diff > 0.0 {
                         // CPU usage is normalized by the number of cores
-                        let num_cores = num_cpus::get() as f64;
+                        let num_cores = f64::from(num_cpus::get() as u32);
                         let cpu_time_diff = current_cpu_time - *last_cpu_time;
 
                         // Convert jiffies to percentage
@@ -541,6 +540,7 @@ impl ResourceTracker {
     }
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+    #[allow(unsafe_code)]
     fn get_memory_windows(pid: u32) -> Result<u64> {
         let mut pmc = PROCESS_MEMORY_COUNTERS::default();
         let handle =
@@ -565,7 +565,7 @@ impl ResourceTracker {
         unsafe { CloseHandle(handle) };
         result?;
 
-        Ok(pmc.WorkingSetSize)
+        Ok(u64::try_from(pmc.WorkingSetSize).unwrap_or(pmc.WorkingSetSize as u64))
     }
 
     #[cfg(all(target_os = "windows", not(feature = "windows-monitoring")))]
@@ -576,6 +576,7 @@ impl ResourceTracker {
     }
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+    #[allow(unsafe_code)]
     fn get_cpu_windows(
         pid: u32,
         last_cpu_time: &mut f64,

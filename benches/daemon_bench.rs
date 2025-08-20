@@ -43,9 +43,9 @@ fn bench_config_loading(c: &mut Criterion) {
             let config = Config::builder()
                 .name("bench-daemon")
                 .worker_threads(4)
-                .shutdown_timeout(Duration::from_secs(5))
+                .shutdown_timeout(Duration::from_secs(2))
                 .unwrap()
-                .force_shutdown_timeout(Duration::from_secs(2))
+                .force_shutdown_timeout(Duration::from_secs(5))
                 .unwrap()
                 .build()
                 .unwrap();
