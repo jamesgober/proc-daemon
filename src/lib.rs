@@ -1,5 +1,5 @@
 //! # proc-daemon: High-Performance Daemon Framework
-//! 
+//!
 //! A foundational framework for building high-performance, resilient daemon services in Rust.
 //! Designed for enterprise applications requiring nanosecond-level performance, bulletproof
 //! reliability, and extreme concurrency.
@@ -22,7 +22,7 @@
 //! // This example is marked as compile_fail to prevent freezing in doctests
 //! use proc_daemon::{Daemon, Config, Result};
 //! use std::time::Duration;
-//! 
+//!
 //! async fn my_service(mut shutdown: proc_daemon::ShutdownHandle) -> Result<()> {
 //!     // Limited iterations to prevent infinite loops
 //!     for _ in 0..3 {
@@ -60,7 +60,7 @@
 //! // This example is marked as ignore to prevent freezing in doctests
 //! use proc_daemon::{Daemon, Config, Result};
 //! use std::time::Duration;
-//! 
+//!
 //! async fn my_service(mut shutdown: proc_daemon::ShutdownHandle) -> Result<()> {
 //!     // Use a counter to avoid infinite loops
 //!     let mut counter = 0;
@@ -78,7 +78,7 @@
 //!     }
 //!     Ok(())
 //! }
-//! 
+//!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
 //!     let config = Config::new()?;
@@ -109,19 +109,19 @@ mod error;
 mod pool;
 
 // Public modules
+pub mod lock;
+pub mod resources;
 pub mod shutdown;
 pub mod signal;
 pub mod subsystem;
-pub mod lock;
-pub mod resources;
 
 // Public exports
 pub use config::{Config, LogLevel};
 pub use daemon::{Daemon, DaemonBuilder};
 pub use error::{Error, Result};
-pub use shutdown::{ShutdownHandle, ShutdownReason};
-pub use subsystem::{Subsystem, SubsystemId, RestartPolicy};
 pub use pool::*;
+pub use shutdown::{ShutdownHandle, ShutdownReason};
+pub use subsystem::{RestartPolicy, Subsystem, SubsystemId};
 
 #[cfg(feature = "metrics")]
 pub mod metrics;

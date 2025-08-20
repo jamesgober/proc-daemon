@@ -9,14 +9,11 @@ async fn noop_subsystem(_shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
 
 fn bench_daemon_creation(c: &mut Criterion) {
     let _rt = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("daemon_creation", |b| {
         b.iter(|| {
             let config = Config::new().unwrap();
-            let daemon = Daemon::builder(config)
-                .without_signals()
-                .build()
-                .unwrap();
+            let daemon = Daemon::builder(config).without_signals().build().unwrap();
             black_box(daemon);
         });
     });
@@ -24,7 +21,7 @@ fn bench_daemon_creation(c: &mut Criterion) {
 
 fn bench_subsystem_registration(c: &mut Criterion) {
     let _rt = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("subsystem_registration", |b| {
         b.iter(|| {
             let config = Config::new().unwrap();
@@ -57,7 +54,7 @@ fn bench_config_loading(c: &mut Criterion) {
 
 fn bench_shutdown_coordination(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("shutdown_coordination", |b| {
         b.iter_custom(|iters| {
             rt.block_on(async {
@@ -69,7 +66,7 @@ fn bench_shutdown_coordination(c: &mut Criterion) {
                         .without_signals()
                         .build()
                         .unwrap();
-                    
+
                     // Immediately shutdown
                     daemon.shutdown();
                     black_box(daemon);
@@ -83,27 +80,27 @@ fn bench_shutdown_coordination(c: &mut Criterion) {
 #[cfg(feature = "metrics")]
 fn bench_metrics_collection(c: &mut Criterion) {
     use proc_daemon::metrics::MetricsCollector;
-    
+
     let collector = MetricsCollector::new();
-    
+
     c.bench_function("metrics_counter_increment", |b| {
         b.iter(|| {
             collector.increment_counter("bench_counter", black_box(1));
         });
     });
-    
+
     c.bench_function("metrics_gauge_set", |b| {
         b.iter(|| {
             collector.set_gauge("bench_gauge", black_box(42));
         });
     });
-    
+
     c.bench_function("metrics_histogram_record", |b| {
         b.iter(|| {
             collector.record_histogram("bench_histogram", black_box(Duration::from_nanos(100)));
         });
     });
-    
+
     c.bench_function("metrics_snapshot", |b| {
         b.iter(|| {
             let snapshot = collector.get_metrics();
@@ -114,14 +111,14 @@ fn bench_metrics_collection(c: &mut Criterion) {
 
 fn bench_error_creation(c: &mut Criterion) {
     use proc_daemon::Error;
-    
+
     c.bench_function("error_creation", |b| {
         b.iter(|| {
             let err = Error::runtime(black_box("benchmark error"));
             black_box(err);
         });
     });
-    
+
     c.bench_function("error_chain", |b| {
         b.iter(|| {
             let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout");
@@ -141,10 +138,7 @@ criterion_group!(
 );
 
 #[cfg(feature = "metrics")]
-criterion_group!(
-    metrics_benches,
-    bench_metrics_collection
-);
+criterion_group!(metrics_benches, bench_metrics_collection);
 
 #[cfg(feature = "metrics")]
 criterion_main!(benches, metrics_benches);

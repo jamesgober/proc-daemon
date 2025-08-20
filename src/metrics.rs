@@ -3,12 +3,12 @@
 //! This module provides optional metrics collection capabilities for monitoring
 //! daemon performance, subsystem health, and resource usage.
 
+use crate::pool::StringPool;
+use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use parking_lot::RwLock;
-use std::collections::HashMap;
-use crate::pool::StringPool;
 
 // Metrics error handling
 
@@ -54,7 +54,8 @@ impl MetricsCollector {
             // Use string pool to avoid allocation
             let pooled_name = self.string_pool.get_with_value(name);
             let mut counters = self.inner.counters.write();
-            counters.entry(pooled_name.to_string())
+            counters
+                .entry(pooled_name.to_string())
                 .or_insert_with(|| AtomicU64::new(0))
                 .fetch_add(value, Ordering::AcqRel);
         }
@@ -70,7 +71,8 @@ impl MetricsCollector {
             // Use string pool to avoid allocation
             let pooled_name = self.string_pool.get_with_value(name);
             let mut gauges = self.inner.gauges.write();
-            gauges.entry(pooled_name.to_string())
+            gauges
+                .entry(pooled_name.to_string())
                 .or_insert_with(|| AtomicU64::new(0))
                 .store(value, Ordering::Release);
         }
@@ -81,19 +83,27 @@ impl MetricsCollector {
         // Use string pool to avoid allocation
         let pooled_name = self.string_pool.get_with_value(name);
         let mut histograms = self.inner.histograms.write();
-        histograms.entry(pooled_name.to_string())
+        histograms
+            .entry(pooled_name.to_string())
             .or_insert_with(|| Vec::with_capacity(64)) // Pre-allocate vector to avoid frequent reallocations
             .push(duration);
     }
 
     /// Get current metric values.
+    #[must_use]
     pub fn get_metrics(&self) -> MetricsSnapshot {
-        let counters: HashMap<String, u64> = self.inner.counters.read()
+        let counters: HashMap<String, u64> = self
+            .inner
+            .counters
+            .read()
             .iter()
             .map(|(k, v)| (k.clone(), v.load(Ordering::Acquire)))
             .collect();
 
-        let gauges: HashMap<String, u64> = self.inner.gauges.read()
+        let gauges: HashMap<String, u64> = self
+            .inner
+            .gauges
+            .read()
             .iter()
             .map(|(k, v)| (k.clone(), v.load(Ordering::Acquire)))
             .collect();
@@ -142,7 +152,7 @@ pub struct MetricsSnapshot {
 #[derive(Debug)]
 pub struct Timer {
     collector: MetricsCollector,
-    name: Arc<str>,  // Use Arc<str> instead of String to avoid clone during drop
+    name: Arc<str>, // Use Arc<str> instead of String to avoid clone during drop
     start: Instant,
 }
 
@@ -153,7 +163,7 @@ impl Timer {
         // Create an Arc<str> directly from the input name
         // This avoids holding a reference to the collector's string pool
         let name_arc: Arc<str> = Arc::from(name.as_ref());
-        
+
         Self {
             collector,
             name: name_arc,
@@ -164,7 +174,8 @@ impl Timer {
     /// Stop the timer and record the duration.
     pub fn stop(self) {
         let duration = self.start.elapsed();
-        self.collector.record_histogram(self.name.as_ref(), duration);
+        self.collector
+            .record_histogram(self.name.as_ref(), duration);
     }
 }
 
@@ -172,7 +183,8 @@ impl Drop for Timer {
     fn drop(&mut self) {
         let duration = self.start.elapsed();
         // Use the Arc<str> directly to avoid allocation
-        self.collector.record_histogram(self.name.as_ref(), duration);
+        self.collector
+            .record_histogram(self.name.as_ref(), duration);
     }
 }
 
@@ -194,20 +206,20 @@ mod tests {
     #[test]
     fn test_metrics_collector() {
         let collector = MetricsCollector::new();
-        
+
         // Test counter
         collector.increment_counter("test_counter", 5);
         collector.increment_counter("test_counter", 3);
-        
+
         // Test gauge
         collector.set_gauge("test_gauge", 42);
-        
+
         // Test histogram
         collector.record_histogram("test_histogram", Duration::from_millis(100));
         collector.record_histogram("test_histogram", Duration::from_millis(200));
-        
+
         let snapshot = collector.get_metrics();
-        
+
         assert_eq!(snapshot.counters.get("test_counter"), Some(&8));
         assert_eq!(snapshot.gauges.get("test_gauge"), Some(&42));
         assert_eq!(snapshot.histograms.get("test_histogram").unwrap().len(), 2);
@@ -216,12 +228,12 @@ mod tests {
     #[test]
     fn test_timer() {
         let collector = MetricsCollector::new();
-        
+
         {
             let _timer = Timer::new(collector.clone(), "test_timer".to_string());
             std::thread::sleep(Duration::from_millis(10));
         }
-        
+
         let snapshot = collector.get_metrics();
         let durations = snapshot.histograms.get("test_timer").unwrap();
         assert_eq!(durations.len(), 1);

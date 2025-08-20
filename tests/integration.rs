@@ -1,6 +1,6 @@
 //! Integration tests for proc-daemon.
 
-use proc_daemon::{Daemon, Config, LogLevel};
+use proc_daemon::{Config, Daemon, LogLevel};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -27,13 +27,14 @@ async fn test_basic_daemon_creation() {
     // Verify basic properties
     assert!(daemon.is_running());
     assert_eq!(daemon.config().name, "test-daemon");
-    
+
     // Test shutdown with timeout
     let shutdown_result = timeout(test_timeout, async {
         daemon.shutdown();
         assert!(!daemon.is_running());
-    }).await;
-    
+    })
+    .await;
+
     assert!(shutdown_result.is_ok(), "Test timed out during shutdown");
 }
 
@@ -76,8 +77,9 @@ async fn test_daemon_stats() {
         assert!(stats.uptime.is_none()); // Not started yet
         assert!(!stats.is_shutdown);
         assert_eq!(stats.subsystem_stats.total_subsystems, 1);
-    }).await;
-    
+    })
+    .await;
+
     assert!(stats_result.is_ok(), "Test timed out during stats check");
 }
 
@@ -105,13 +107,14 @@ async fn test_multiple_subsystems() {
 
     let stats = daemon.get_stats();
     assert_eq!(stats.subsystem_stats.total_subsystems, 2);
-    
+
     // Shutdown with timeout
     let shutdown_result = timeout(test_timeout, async {
         daemon.shutdown();
         assert!(!daemon.is_running());
-    }).await;
-    
+    })
+    .await;
+
     assert!(shutdown_result.is_ok(), "Test timed out during shutdown");
 }
 
@@ -129,12 +132,13 @@ async fn test_daemon_with_defaults() {
         .unwrap();
 
     assert!(daemon.is_running());
-    
+
     // Shutdown with timeout
     let shutdown_result = timeout(test_timeout, async {
         daemon.shutdown();
         assert!(!daemon.is_running());
-    }).await;
-    
+    })
+    .await;
+
     assert!(shutdown_result.is_ok(), "Test timed out during shutdown");
 }

@@ -57,7 +57,8 @@ impl ShutdownHandle {
     }
 
     /// Check if shutdown has been initiated.
-    #[must_use] pub fn is_shutdown(&self) -> bool {
+    #[must_use]
+    pub fn is_shutdown(&self) -> bool {
         self.inner.is_shutdown()
     }
 
@@ -85,7 +86,8 @@ impl ShutdownHandle {
     }
 
     /// Get the reason for shutdown (if initiated).
-    #[must_use] pub fn shutdown_reason(&self) -> Option<ShutdownReason> {
+    #[must_use]
+    pub fn shutdown_reason(&self) -> Option<ShutdownReason> {
         if self.is_shutdown() {
             Some(**self.inner.shutdown_reason.load())
         } else {
@@ -116,10 +118,9 @@ impl ShutdownHandle {
     pub fn time_remaining(&self) -> Option<Duration> {
         self.shutdown_time().and_then(|shutdown_time| {
             let elapsed = shutdown_time.elapsed();
-            let timeout = Duration::from_millis(
-                self.inner.force_timeout_ms.load(Ordering::Acquire)
-            );
-            
+            let timeout =
+                Duration::from_millis(self.inner.force_timeout_ms.load(Ordering::Acquire));
+
             if elapsed < timeout {
                 Some(timeout - elapsed)
             } else {
@@ -187,7 +188,8 @@ impl ShutdownInner {
     #[must_use]
     pub fn initiate_shutdown(&self, reason: ShutdownReason) -> bool {
         // Use compare_exchange to ensure we only initiate once
-        if self.shutdown_initiated
+        if self
+            .shutdown_initiated
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
@@ -227,7 +229,10 @@ impl ShutdownInner {
         let subsystems = self.subsystems.lock();
         if let Some(subsystem) = subsystems.iter().find(|s| s.id == subsystem_id) {
             subsystem.ready.store(true, Ordering::Release);
-            debug!("Subsystem '{}' marked as ready for shutdown", subsystem.name);
+            debug!(
+                "Subsystem '{}' marked as ready for shutdown",
+                subsystem.name
+            );
         }
     }
 
@@ -268,12 +273,14 @@ impl ShutdownCoordinator {
     }
 
     /// Initiate graceful shutdown.
-    #[must_use] pub fn initiate_shutdown(&self, reason: ShutdownReason) -> bool {
+    #[must_use]
+    pub fn initiate_shutdown(&self, reason: ShutdownReason) -> bool {
         self.inner.initiate_shutdown(reason)
     }
 
     /// Check if shutdown has been initiated.
-    #[must_use] pub fn is_shutdown(&self) -> bool {
+    #[must_use]
+    pub fn is_shutdown(&self) -> bool {
         self.inner.is_shutdown()
     }
 
@@ -288,20 +295,28 @@ impl ShutdownCoordinator {
             return Err(Error::invalid_state("Shutdown not initiated"));
         }
 
-        let _shutdown_time = self.inner.shutdown_time.lock()
+        let _shutdown_time = self
+            .inner
+            .shutdown_time
+            .lock()
             .ok_or_else(|| Error::invalid_state("Shutdown time not set"))?;
 
-        let graceful_timeout = Duration::from_millis(
-            self.inner.force_timeout_ms.load(Ordering::Acquire)
-        );
+        let graceful_timeout =
+            Duration::from_millis(self.inner.force_timeout_ms.load(Ordering::Acquire));
 
-        info!("Waiting for subsystems to shutdown gracefully (timeout: {:?})", graceful_timeout);
+        info!(
+            "Waiting for subsystems to shutdown gracefully (timeout: {:?})",
+            graceful_timeout
+        );
 
         // Wait for all subsystems to be ready or timeout
         let start = Instant::now();
         while start.elapsed() < graceful_timeout {
             if self.inner.are_all_subsystems_ready() {
-                info!("All subsystems shut down gracefully in {:?}", start.elapsed());
+                info!(
+                    "All subsystems shut down gracefully in {:?}",
+                    start.elapsed()
+                );
                 return Ok(());
             }
 
@@ -328,8 +343,7 @@ impl ShutdownCoordinator {
         // Initiate forced shutdown
         let _ = self.inner.initiate_shutdown(ShutdownReason::Forced);
 
-        let timeout_ms = u64::try_from(graceful_timeout.as_millis())
-            .unwrap_or(u64::MAX);
+        let timeout_ms = u64::try_from(graceful_timeout.as_millis()).unwrap_or(u64::MAX);
         Err(Error::timeout("Graceful shutdown", timeout_ms))
     }
 
@@ -340,9 +354,8 @@ impl ShutdownCoordinator {
     ///
     /// Returns an `Error::timeout` if the kill shutdown timeout is reached.
     pub async fn wait_for_force_shutdown(&self) -> Result<()> {
-        let force_timeout = Duration::from_millis(
-            self.inner.force_timeout_ms.load(Ordering::Acquire)
-        );
+        let force_timeout =
+            Duration::from_millis(self.inner.force_timeout_ms.load(Ordering::Acquire));
 
         warn!("Waiting for forced shutdown timeout: {:?}", force_timeout);
 
@@ -379,9 +392,16 @@ impl ShutdownCoordinator {
 
     /// Update timeout configurations at runtime.
     pub fn update_timeouts(&self, force_timeout_ms: u64, kill_timeout_ms: u64) {
-        self.inner.force_timeout_ms.store(force_timeout_ms, Ordering::Release);
-        self.inner.kill_timeout_ms.store(kill_timeout_ms, Ordering::Release);
-        debug!("Updated shutdown timeouts: force={}ms, kill={}ms", force_timeout_ms, kill_timeout_ms);
+        self.inner
+            .force_timeout_ms
+            .store(force_timeout_ms, Ordering::Release);
+        self.inner
+            .kill_timeout_ms
+            .store(kill_timeout_ms, Ordering::Release);
+        debug!(
+            "Updated shutdown timeouts: force={}ms, kill={}ms",
+            force_timeout_ms, kill_timeout_ms
+        );
     }
 }
 
@@ -448,7 +468,7 @@ mod tests {
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             // Use shorter timeouts for testing
             let coordinator = ShutdownCoordinator::new(100, 200);
-            
+
             // Create handles for subsystems
             let handle1 = coordinator.create_handle("subsystem1");
             let handle2 = coordinator.create_handle("subsystem2");
@@ -459,11 +479,11 @@ mod tests {
 
             // Initiate shutdown
             assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
-            
+
             // Should be shutdown now
             assert!(coordinator.is_shutdown());
             assert!(handle1.is_shutdown());
-            
+
             // Instead of trying to listen for the cancelled() notification,
             // we'll just verify that the handle is properly marked as shutdown
             assert!(handle1.is_shutdown());
@@ -477,8 +497,9 @@ mod tests {
             let stats = coordinator.get_stats();
             assert!(stats.is_complete());
             assert_eq!(stats.progress(), 1.0);
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
@@ -487,18 +508,19 @@ mod tests {
         // Add a test timeout to prevent the test itself from hanging
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let coordinator = ShutdownCoordinator::new(100, 200); // Very short timeout
-            
+
             let _handle1 = coordinator.create_handle("slow_subsystem");
-            
+
             // Initiate shutdown but don't mark as ready
             let _ = coordinator.initiate_shutdown(ShutdownReason::Requested);
-            
+
             // Wait for shutdown should timeout
             let result = coordinator.wait_for_shutdown().await;
             assert!(result.is_err());
             assert!(result.unwrap_err().is_timeout());
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
@@ -514,19 +536,20 @@ mod tests {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let coordinator = ShutdownCoordinator::new(5000, 10000);
-            
+
             // First initiation should succeed
             assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
-            
+
             // Subsequent initiations should be ignored
             assert!(!coordinator.initiate_shutdown(ShutdownReason::Signal(15)));
             assert!(!coordinator.initiate_shutdown(ShutdownReason::Error));
-            
+
             // Reason should remain the first one
             let stats = coordinator.get_stats();
             assert_eq!(stats.reason, Some(ShutdownReason::Requested));
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 

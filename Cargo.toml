@@ -135,7 +135,7 @@ async-std = ["dep:async-std"]
 # Optional features
 metrics = ["dep:metrics"]
 console = ["dep:console"] 
-json-logs = ["serde_json"]
+json-logs = ["serde_json", "serde"]
 config-watch = ["notify"]
 backtrace = []
 serde = []

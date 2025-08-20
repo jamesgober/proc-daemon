@@ -3,9 +3,9 @@
 //! This example shows how to build a production-ready daemon service with
 //! multiple subsystems, configuration management, signal handling, and metrics.
 
-use proc_daemon::{Daemon, Config, LogLevel, RestartPolicy, Subsystem, ShutdownHandle};
-use std::pin::Pin;
+use proc_daemon::{Config, Daemon, LogLevel, RestartPolicy, ShutdownHandle, Subsystem};
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -21,17 +21,20 @@ impl HttpServer {
 }
 
 impl Subsystem for HttpServer {
-    fn run(&self, mut shutdown: ShutdownHandle) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
+    fn run(
+        &self,
+        mut shutdown: ShutdownHandle,
+    ) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
         let port = self.port;
         Box::pin(async move {
             info!("Starting HTTP server on port {}", port);
-            
+
             // Simulate server initialization
             tokio::time::sleep(Duration::from_millis(100)).await;
             info!("HTTP server listening on port {}", port);
 
             let mut request_count = 0u64;
-            
+
             loop {
                 tokio::select! {
                     _ = shutdown.cancelled() => {
@@ -50,7 +53,7 @@ impl Subsystem for HttpServer {
                     }
                 }
             }
-            
+
             Ok(())
         })
     }
@@ -87,16 +90,22 @@ impl DatabasePool {
 }
 
 impl Subsystem for DatabasePool {
-    fn run(&self, mut shutdown: ShutdownHandle) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
+    fn run(
+        &self,
+        mut shutdown: ShutdownHandle,
+    ) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
         let max_connections = self.max_connections;
         Box::pin(async move {
-            info!("Initializing database connection pool (max: {})", max_connections);
-            
+            info!(
+                "Initializing database connection pool (max: {})",
+                max_connections
+            );
+
             // Simulate pool initialization
             tokio::time::sleep(Duration::from_millis(200)).await;
-            
+
             let mut active_connections = 0u32;
-            
+
             loop {
                 tokio::select! {
                     _ = shutdown.cancelled() => {
@@ -113,15 +122,15 @@ impl Subsystem for DatabasePool {
                         // Simulate connection management
                         let new_connections = fastrand::u32(0..5);
                         active_connections = (active_connections + new_connections).min(max_connections);
-                        
+
                         if active_connections > max_connections * 8 / 10 {
-                            warn!("Database pool at {}% capacity", 
+                            warn!("Database pool at {}% capacity",
                                   active_connections * 100 / max_connections);
                         }
                     }
                 }
             }
-            
+
             Ok(())
         })
     }
@@ -138,9 +147,9 @@ impl Subsystem for DatabasePool {
 /// Example background task processor
 async fn background_processor(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
     info!("Starting background task processor");
-    
+
     let mut tasks_processed = 0u64;
-    
+
     loop {
         tokio::select! {
             _ = shutdown.cancelled() => {
@@ -150,11 +159,11 @@ async fn background_processor(mut shutdown: ShutdownHandle) -> proc_daemon::Resu
             _ = tokio::time::sleep(Duration::from_millis(50)) => {
                 // Simulate processing background tasks
                 tasks_processed += fastrand::u64(1..5);
-                
+
                 if tasks_processed % 50 == 0 {
                     info!("Background processor completed {} tasks", tasks_processed);
                 }
-                
+
                 // Simulate occasional processing error
                 if fastrand::f32() < 0.001 {
                     warn!("Background processor encountered non-critical error");
@@ -162,14 +171,14 @@ async fn background_processor(mut shutdown: ShutdownHandle) -> proc_daemon::Resu
             }
         }
     }
-    
+
     Ok(())
 }
 
 /// Example metrics reporter
 async fn metrics_reporter(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
     info!("Starting metrics reporter");
-    
+
     loop {
         tokio::select! {
             _ = shutdown.cancelled() => {
@@ -181,19 +190,19 @@ async fn metrics_reporter(mut shutdown: ShutdownHandle) -> proc_daemon::Result<(
                 let cpu_usage = fastrand::f32() * 100.0;
                 let memory_usage = fastrand::f32() * 100.0;
                 let disk_usage = fastrand::f32() * 100.0;
-                
+
                 info!(
                     "System metrics - CPU: {:.1}%, Memory: {:.1}%, Disk: {:.1}%",
                     cpu_usage, memory_usage, disk_usage
                 );
-                
+
                 if cpu_usage > 90.0 || memory_usage > 90.0 {
                     warn!("High resource usage detected!");
                 }
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -203,7 +212,7 @@ async fn main() -> proc_daemon::Result<()> {
     let config = Config::builder()
         .name("example-daemon")
         .log_level(LogLevel::Info)
-        .json_logging(false)  // Use structured text logs for this example
+        .json_logging(false) // Use structured text logs for this example
         .shutdown_timeout(Duration::from_secs(30))
         .worker_threads(4)
         .enable_metrics(true)
@@ -213,21 +222,16 @@ async fn main() -> proc_daemon::Result<()> {
     Daemon::builder(config)
         // Add HTTP server subsystem
         .with_subsystem(HttpServer::new(8080))
-        
         // Add database pool subsystem
         .with_subsystem(DatabasePool::new(20))
-        
         // Add background task processor
         .with_subsystem_fn("background_processor", |subsystem_manager| {
             subsystem_manager.register_fn("background_processor", background_processor)
         })
-        
         // Add metrics reporter
         .with_task("metrics_reporter", metrics_reporter)
-        
         // Configure signal handling
-        .with_signals(true, true)  // Handle SIGTERM and SIGINT
-        
+        .with_signals(true, true) // Handle SIGTERM and SIGINT
         // Run the daemon
         .run()
         .await

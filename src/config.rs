@@ -4,8 +4,8 @@
 //! from multiple sources with clear precedence rules. Built on top of figment
 //! for maximum flexibility and performance.
 
-use figment::{Figment, Provider};
 use figment::providers::{Env, Format, Serialized};
+use figment::{Figment, Provider};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -218,7 +218,7 @@ impl Config {
     /// Will return an error if the file cannot be read or contains invalid configuration data.
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        
+
         let mut figment = Figment::from(Serialized::defaults(Self::default()))
             .merge(Env::prefixed("DAEMON_").split("_"));
 
@@ -228,7 +228,7 @@ impl Config {
             {
                 figment = figment.merge(figment::providers::Toml::file(path));
             }
-            
+
             #[cfg(feature = "serde_json")]
             {
                 if path.extension().and_then(|s| s.to_str()) == Some("json") {
@@ -254,27 +254,32 @@ impl Config {
     }
 
     /// Get the shutdown timeout as a Duration.
-    #[must_use] pub const fn shutdown_timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn shutdown_timeout(&self) -> Duration {
         Duration::from_millis(self.shutdown.graceful)
     }
 
     /// Get the force shutdown timeout as a Duration.
-    #[must_use] pub const fn force_shutdown_timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn force_shutdown_timeout(&self) -> Duration {
         Duration::from_millis(self.shutdown.force)
     }
 
     /// Get the kill timeout as a Duration.
-    #[must_use] pub const fn kill_timeout(&self) -> Duration {
+    #[must_use]
+    pub const fn kill_timeout(&self) -> Duration {
         Duration::from_millis(self.shutdown.kill)
     }
 
     /// Get the metrics interval as a Duration.
-    #[must_use] pub const fn metrics_interval(&self) -> Duration {
+    #[must_use]
+    pub const fn metrics_interval(&self) -> Duration {
         Duration::from_millis(self.monitoring.metrics_interval_ms)
     }
 
     /// Get the health check interval as a Duration.
-    #[must_use] pub const fn health_check_interval(&self) -> Duration {
+    #[must_use]
+    pub const fn health_check_interval(&self) -> Duration {
         Duration::from_millis(self.monitoring.health_check_interval_ms)
     }
 
@@ -291,13 +296,13 @@ impl Config {
 
         if self.shutdown.force <= self.shutdown.graceful {
             return Err(Error::config(
-                "Force timeout must be greater than graceful timeout"
+                "Force timeout must be greater than graceful timeout",
             ));
         }
 
         if self.shutdown.kill <= self.shutdown.force {
             return Err(Error::config(
-                "Kill timeout must be greater than force timeout"
+                "Kill timeout must be greater than force timeout",
             ));
         }
 
@@ -309,13 +314,13 @@ impl Config {
         // Validate monitoring settings
         if self.monitoring.enable_metrics && self.monitoring.metrics_interval_ms == 0 {
             return Err(Error::config(
-                "Metrics interval must be greater than 0 when metrics are enabled"
+                "Metrics interval must be greater than 0 when metrics are enabled",
             ));
         }
 
         if self.monitoring.health_checks && self.monitoring.health_check_interval_ms == 0 {
             return Err(Error::config(
-                "Health check interval must be greater than 0 when health checks are enabled"
+                "Health check interval must be greater than 0 when health checks are enabled",
             ));
         }
 
@@ -362,17 +367,20 @@ impl Config {
     }
 
     /// Check if JSON logging is enabled.
-    #[must_use] pub const fn is_json_logging(&self) -> bool {
+    #[must_use]
+    pub const fn is_json_logging(&self) -> bool {
         self.logging.json
     }
 
     /// Check if colored logging is enabled.
-    #[must_use] pub const fn is_colored_logging(&self) -> bool {
+    #[must_use]
+    pub const fn is_colored_logging(&self) -> bool {
         self.logging.color && !self.logging.json
     }
 
     /// Create a builder for this configuration.
-    #[must_use] pub fn builder() -> ConfigBuilder {
+    #[must_use]
+    pub fn builder() -> ConfigBuilder {
         ConfigBuilder::new()
     }
 }
@@ -412,7 +420,7 @@ impl ConfigBuilder {
     /// Set the shutdown timeout
     ///
     /// # Errors
-    /// 
+    ///
     /// Will return an error if the duration exceeds `u64::MAX` milliseconds
     pub fn shutdown_timeout(mut self, timeout: Duration) -> Result<Self> {
         self.config.shutdown.graceful = u64::try_from(timeout.as_millis())
@@ -423,7 +431,7 @@ impl ConfigBuilder {
     /// Set the force shutdown timeout
     ///
     /// # Errors
-    /// 
+    ///
     /// Will return an error if the duration exceeds `u64::MAX` milliseconds
     pub fn force_shutdown_timeout(mut self, timeout: Duration) -> Result<Self> {
         self.config.shutdown.force = u64::try_from(timeout.as_millis())
@@ -434,7 +442,7 @@ impl ConfigBuilder {
     /// Set the kill timeout
     ///
     /// # Errors
-    /// 
+    ///
     /// Will return an error if the duration exceeds `u64::MAX` milliseconds
     pub fn kill_timeout(mut self, timeout: Duration) -> Result<Self> {
         self.config.shutdown.kill = u64::try_from(timeout.as_millis())
@@ -517,9 +525,9 @@ mod tests {
             .name("test-daemon")
             .log_level(LogLevel::Debug)
             .json_logging(true)
-            .shutdown_timeout(Duration::from_secs(10))
-            .force_shutdown_timeout(Duration::from_secs(20)) // Force timeout > shutdown timeout
-            .kill_timeout(Duration::from_secs(30)) // Kill timeout > force timeout
+            .shutdown_timeout(Duration::from_secs(10)).unwrap()
+            .force_shutdown_timeout(Duration::from_secs(20)).unwrap() // Force timeout > shutdown timeout
+            .kill_timeout(Duration::from_secs(30)).unwrap() // Kill timeout > force timeout
             .worker_threads(4)
             .build()
             .unwrap();
@@ -527,27 +535,27 @@ mod tests {
         assert_eq!(config.name, "test-daemon");
         assert_eq!(config.logging.level, LogLevel::Debug);
         assert!(config.logging.json);
-        assert_eq!(config.shutdown.timeout_ms, 10_000);
-        assert_eq!(config.shutdown.force_timeout_ms, 20_000);
-        assert_eq!(config.shutdown.kill_timeout_ms, 30_000);
+        assert_eq!(config.shutdown.graceful, 10_000);
+        assert_eq!(config.shutdown.force, 20_000);
+        assert_eq!(config.shutdown.kill, 30_000);
         assert_eq!(config.performance.worker_threads, 4);
     }
 
     #[test]
     fn test_config_validation() {
         let mut config = Config::default();
-        config.shutdown.timeout_ms = 0;
+        config.shutdown.graceful = 0;
         assert!(config.validate().is_err());
 
-        config.shutdown.timeout_ms = 5000;
-        config.shutdown.force_timeout_ms = 3000;
+        config.shutdown.graceful = 5000;
+        config.shutdown.force = 3000;
         assert!(config.validate().is_err());
 
-        config.shutdown.force_timeout_ms = 10_000;
-        config.shutdown.kill_timeout_ms = 8_000;
+        config.shutdown.force = 10_000;
+        config.shutdown.kill = 8_000;
         assert!(config.validate().is_err());
 
-        config.shutdown.kill_timeout_ms = 15_000;
+        config.shutdown.kill = 15_000;
         assert!(config.validate().is_ok());
     }
 
@@ -561,7 +569,10 @@ mod tests {
     fn test_duration_helpers() {
         let config = Config::default();
         assert_eq!(config.shutdown_timeout(), Duration::from_millis(5000));
-        assert_eq!(config.force_shutdown_timeout(), Duration::from_millis(10_000));
+        assert_eq!(
+            config.force_shutdown_timeout(),
+            Duration::from_millis(10_000)
+        );
         assert_eq!(config.kill_timeout(), Duration::from_millis(15_000));
     }
 }

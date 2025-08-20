@@ -7,13 +7,13 @@
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, info, warn, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::shutdown::{ShutdownCoordinator, ShutdownReason};
-use crate::signal::{SignalHandler, SignalConfig};
-use crate::subsystem::{Subsystem, SubsystemManager, SubsystemId};
+use crate::signal::{SignalConfig, SignalHandler};
+use crate::subsystem::{Subsystem, SubsystemId, SubsystemManager};
 
 /// Type alias for subsystem registration function
 type SubsystemRegistrationFn = Box<dyn FnOnce(&SubsystemManager) -> SubsystemId + Send + 'static>;
@@ -34,7 +34,8 @@ pub struct Daemon {
 
 impl Daemon {
     /// Create a new daemon builder with the provided configuration.
-    #[must_use] pub fn builder(config: Config) -> DaemonBuilder {
+    #[must_use]
+    pub fn builder(config: Config) -> DaemonBuilder {
         DaemonBuilder::new(config)
     }
 
@@ -50,9 +51,9 @@ impl Daemon {
 
     /// Run the daemon until shutdown is requested.
     /// This is the main entry point that starts all subsystems and waits for shutdown.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if logging initialization fails, configuration validation fails,
     /// subsystem startup fails, or if there is an error during the shutdown sequence.
     #[instrument(skip(self), fields(daemon_name = %self.config.name))]
@@ -78,12 +79,12 @@ impl Daemon {
             |signal_handler| {
                 let handler = Arc::clone(signal_handler);
                 Some(Self::spawn_signal_handler(handler))
-            }
+            },
         );
 
         // Wait for shutdown to be initiated
         info!("Daemon started successfully, waiting for shutdown signal");
-        
+
         // Main daemon loop - wait for shutdown
         loop {
             if self.shutdown_coordinator.is_shutdown() {
@@ -115,7 +116,7 @@ impl Daemon {
 
         // Graceful shutdown sequence
         info!("Shutdown initiated, beginning graceful shutdown");
-        
+
         // Stop signal handling
         if let Some(signal_handler) = &self.signal_handler {
             signal_handler.stop();
@@ -139,7 +140,7 @@ impl Daemon {
         // Wait for graceful shutdown with timeout
         if let Err(e) = self.shutdown_coordinator.wait_for_shutdown().await {
             warn!(error = %e, "Graceful shutdown timeout exceeded");
-            
+
             // Wait for force shutdown timeout
             if let Err(e) = self.shutdown_coordinator.wait_for_force_shutdown().await {
                 error!(error = %e, "Force shutdown timeout exceeded, exiting immediately");
@@ -154,13 +155,44 @@ impl Daemon {
 
     /// Initialize the logging system based on configuration.
     fn init_logging(&self) -> Result<()> {
-        use tracing_subscriber::{EnvFilter, FmtSubscriber};
         use tracing_subscriber::fmt::format::FmtSpan;
+        use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
         let level: tracing::Level = self.config.logging.level.into();
-        let filter = EnvFilter::from_default_env()
-            .add_directive(level.into());
+        let filter = EnvFilter::from_default_env().add_directive(level.into());
 
+        // Configure output format
+        if self.config.is_json_logging() {
+            #[cfg(feature = "json-logs")]
+            {
+                let base_subscriber = FmtSubscriber::builder()
+                    .with_env_filter(filter)
+                    .with_span_events(FmtSpan::CLOSE)
+                    .with_target(true)
+                    .with_thread_ids(true)
+                    .with_thread_names(true);
+
+                let json_subscriber = base_subscriber
+                    .json()
+                    .flatten_event(true)
+                    .with_current_span(false);
+
+                tracing::subscriber::set_global_default(json_subscriber.finish()).map_err(|e| {
+                    Error::config(format!("Failed to initialize JSON logging: {e}"))
+                })?;
+
+                return Ok(()); // Return early as logging is initialized
+            }
+
+            #[cfg(not(feature = "json-logs"))]
+            {
+                return Err(Error::config(
+                    "JSON logging requested but feature not enabled",
+                ));
+            }
+        }
+
+        // Regular non-JSON logging
         let base_subscriber = FmtSubscriber::builder()
             .with_env_filter(filter)
             .with_span_events(FmtSpan::CLOSE)
@@ -168,50 +200,31 @@ impl Daemon {
             .with_thread_ids(true)
             .with_thread_names(true);
 
-        // Configure output format
-        if self.config.is_json_logging() {
-            #[cfg(feature = "json-logs")]
-            {
-                let json_subscriber = base_subscriber
-                    .json()
-                    .flatten_event(true)
-                    .with_current_span(false);
-                
-                tracing::subscriber::set_global_default(json_subscriber.finish())
-                    .map_err(|e| Error::config(format!("Failed to initialize JSON logging: {}", e)))?;
-            }
-            
-            #[cfg(not(feature = "json-logs"))]
-            {
-                return Err(Error::config("JSON logging requested but feature not enabled"));
-            }
-        }
-        
-        // Regular non-JSON logging
         let regular_subscriber = base_subscriber
             .with_ansi(self.config.is_colored_logging())
             .compact();
-            
+
         tracing::subscriber::set_global_default(regular_subscriber.finish())
             .map_err(|e| Error::config(format!("Failed to initialize logging: {e}")))?;
 
-        debug!("Logging initialized with level: {:?}", self.config.logging.level);
+        debug!(
+            "Logging initialized with level: {:?}",
+            self.config.logging.level
+        );
         Ok(())
     }
 
     /// Spawn the signal handler task.
     #[cfg(feature = "tokio")]
     fn spawn_signal_handler(handler: Arc<SignalHandler>) -> tokio::task::JoinHandle<Result<()>> {
-        tokio::spawn(async move {
-            handler.handle_signals().await
-        })
+        tokio::spawn(async move { handler.handle_signals().await })
     }
 
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-    fn spawn_signal_handler(handler: Arc<SignalHandler>) -> async_std::task::JoinHandle<Result<()>> {
-        async_std::task::spawn(async move {
-            handler.handle_signals().await
-        })
+    fn spawn_signal_handler(
+        handler: Arc<SignalHandler>,
+    ) -> async_std::task::JoinHandle<Result<()>> {
+        async_std::task::spawn(async move { handler.handle_signals().await })
     }
 
     /// Get daemon statistics.
@@ -232,7 +245,8 @@ impl Daemon {
 
     /// Request graceful shutdown programmatically.
     pub fn shutdown(&self) -> bool {
-        self.shutdown_coordinator.initiate_shutdown(ShutdownReason::Requested)
+        self.shutdown_coordinator
+            .initiate_shutdown(ShutdownReason::Requested)
     }
 
     /// Check if the daemon is running.
@@ -286,7 +300,8 @@ pub struct DaemonBuilder {
 
 impl DaemonBuilder {
     /// Create a new daemon builder with the provided configuration.
-    #[must_use] pub fn new(config: Config) -> Self {
+    #[must_use]
+    pub fn new(config: Config) -> Self {
         Self {
             config,
             // Pre-allocate the subsystems vector with a reasonable capacity
@@ -325,23 +340,19 @@ impl DaemonBuilder {
     }
 
     /// Add a task that will be run as part of the daemon.
-    /// 
+    ///
     /// A task is a function that will be executed repeatedly until shutdown is requested.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `name` - Name of the task for identification
     /// * `task_fn` - Function that implements the task logic
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Updated builder instance
     #[must_use]
-    pub fn with_task<F, Fut>(
-        mut self,
-        name: &str,
-        task_fn: F
-    ) -> Self 
+    pub fn with_task<F, Fut>(mut self, name: &str, task_fn: F) -> Self
     where
         F: Fn(crate::shutdown::ShutdownHandle) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<()>> + Send + 'static,
@@ -357,21 +368,18 @@ impl DaemonBuilder {
     }
 
     /// Add a subsystem that will be managed by the daemon.
-    /// 
+    ///
     /// A subsystem is a component that implements the `Subsystem` trait.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `subsystem` - The subsystem to add
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Updated builder instance
     #[must_use]
-    pub fn with_subsystem<S>(
-        mut self,
-        subsystem: S
-    ) -> Self 
+    pub fn with_subsystem<S>(mut self, subsystem: S) -> Self
     where
         S: Subsystem + Send + Sync + 'static,
     {
@@ -384,24 +392,20 @@ impl DaemonBuilder {
     }
 
     /// Add a subsystem using a registration function.
-    /// 
+    ///
     /// This is a lower-level method that gives direct access to the `SubsystemManager`
     /// for registration. It's useful when you need more control over the registration process.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `name` - Name for identification in logs
     /// * `register_fn` - Function that handles the subsystem registration
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Updated builder instance
     #[must_use]
-    pub fn with_subsystem_fn<F>(
-        mut self,
-        name: &str,
-        register_fn: F
-    ) -> Self
+    pub fn with_subsystem_fn<F>(mut self, name: &str, register_fn: F) -> Self
     where
         F: FnOnce(&SubsystemManager) -> SubsystemId + Send + 'static,
     {
@@ -421,10 +425,8 @@ impl DaemonBuilder {
         self.config.validate()?;
 
         // Create shutdown coordinator
-        let shutdown_coordinator = ShutdownCoordinator::new(
-            self.config.shutdown.force,
-            self.config.shutdown.kill,
-        );
+        let shutdown_coordinator =
+            ShutdownCoordinator::new(self.config.shutdown.force, self.config.shutdown.kill);
 
         // Create subsystem manager
         let subsystem_manager = SubsystemManager::new(shutdown_coordinator.clone());
@@ -506,8 +508,8 @@ macro_rules! task {
 
 #[cfg(test)]
 mod tests {
-    use std::pin::Pin;
     use super::*;
+    use std::pin::Pin;
     use std::time::Duration;
 
     async fn test_subsystem(mut shutdown: crate::shutdown::ShutdownHandle) -> Result<()> {
@@ -545,11 +547,12 @@ mod tests {
 
             assert!(daemon.is_running());
             assert_eq!(daemon.config().name, "proc-daemon");
-            
+
             // Ensure proper cleanup
             daemon.shutdown();
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
@@ -567,11 +570,12 @@ mod tests {
                 .unwrap();
 
             assert!(daemon.is_running());
-            
+
             // Ensure proper cleanup
             daemon.shutdown();
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
@@ -581,7 +585,7 @@ mod tests {
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let config = Config::builder()
                 .name("test-daemon")
-                .shutdown_timeout(Duration::from_millis(100))
+                .shutdown_timeout(Duration::from_millis(100)).unwrap()
                 .build()
                 .unwrap();
 
@@ -596,17 +600,16 @@ mod tests {
             // Request shutdown
             daemon.shutdown();
             assert!(!daemon.is_running());
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
     #[test]
     fn test_daemon_stats() {
         let config = Config::new().unwrap();
-        let daemon = Daemon::builder(config)
-            .build()
-            .unwrap();
+        let daemon = Daemon::builder(config).build().unwrap();
 
         let stats = daemon.get_stats();
         assert_eq!(stats.name, "proc-daemon");
@@ -627,7 +630,10 @@ mod tests {
     }
 
     impl Subsystem for TestSubsystemStruct {
-        fn run(&self, mut shutdown: crate::shutdown::ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        fn run(
+            &self,
+            mut shutdown: crate::shutdown::ShutdownHandle,
+        ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
             Box::pin(async move {
                 loop {
                     #[cfg(feature = "tokio")]
@@ -661,7 +667,7 @@ mod tests {
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let config = Config::new().unwrap();
             let subsystem = TestSubsystemStruct::new("struct_test");
-            
+
             let daemon = Daemon::builder(config)
                 .with_subsystem(subsystem)
                 .without_signals()
@@ -670,11 +676,12 @@ mod tests {
 
             let stats = daemon.get_stats();
             assert_eq!(stats.subsystem_stats.total_subsystems, 1);
-            
+
             // Ensure proper cleanup
             daemon.shutdown();
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
@@ -683,9 +690,7 @@ mod tests {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let config = Config::new().unwrap();
-            let signal_config = SignalConfig::new()
-                .with_sighup()
-                .without_sigint();
+            let signal_config = SignalConfig::new().with_sighup().without_sigint();
 
             let daemon = Daemon::builder(config)
                 .with_signal_config(signal_config)
@@ -693,11 +698,12 @@ mod tests {
                 .unwrap();
 
             assert!(daemon.signal_handler.is_some());
-            
+
             // Ensure proper cleanup
             daemon.shutdown();
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
@@ -706,22 +712,26 @@ mod tests {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let config = Config::new().unwrap();
-            
+
             let daemon = Daemon::builder(config)
-                .with_task("macro_test", task!("macro_test", {
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }))
+                .with_task(
+                    "macro_test",
+                    task!("macro_test", {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }),
+                )
                 .without_signals()
                 .build()
                 .unwrap();
 
             let stats = daemon.get_stats();
             assert_eq!(stats.subsystem_stats.total_subsystems, 1);
-            
+
             // Ensure proper cleanup
             daemon.shutdown();
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 }

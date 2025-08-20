@@ -2,9 +2,9 @@
 //!
 //! This module provides comprehensive error types for all daemon operations,
 //! designed for both programmatic handling and human-readable error messages.
-//! 
+//!
 //! # Features
-//! 
+//!
 //! * Structured error codes for all error types
 //! * Source error capture for better context
 //! * Backtrace support for production debugging
@@ -14,7 +14,7 @@
 //! # Error Structure
 //!
 //! Each error variant contains:
-//! 
+//!
 //! * **Error Code**: A unique identifier for programmatic handling and metrics
 //! * **Message**: A human-readable description of the error
 //! * **Source**: Optional underlying error that caused this error
@@ -55,7 +55,7 @@
 //!     let file = match File::open(path) {
 //!         Ok(f) => f,
 //!         Err(err) => return Err(Error::io_with_source(
-//!             format!("Failed to open config file: {}", path), 
+//!             format!("Failed to open config file: {}", path),
 //!             err
 //!         )),
 //!     };
@@ -73,11 +73,11 @@
 //! 4. Enable backtraces in development and test environments
 //!
 //! # Feature Flags
-//! 
+//!
 //! ## Backtrace Support
-//! 
+//!
 //! Enable backtrace support with the `backtrace` feature:
-//! 
+//!
 //! ```toml
 //! [dependencies]
 //! proc-daemon = { version = "0.1.0", features = ["backtrace"] }
@@ -91,7 +91,7 @@
 //! [dependencies]
 //! proc-daemon = { version = "0.1.0", features = ["serde"] }
 //! ```
-//! 
+//!
 //! This allows errors to be serialized for structured logging or metrics collection.
 
 /// Result type alias for proc-daemon operations.
@@ -116,6 +116,7 @@ pub struct BacktraceError {
 #[cfg(feature = "backtrace")]
 impl BacktraceError {
     /// Create a new backtrace error with a message
+    #[allow(dead_code)]
     pub fn new<S: Into<String>>(message: S) -> Self {
         Self {
             message: message.into(),
@@ -125,9 +126,10 @@ impl BacktraceError {
     }
 
     /// Create a new backtrace error with a message and source
+    #[allow(dead_code)]
     pub fn with_source<S: Into<String>, E: std::error::Error + Send + Sync + 'static>(
-        message: S, 
-        source: E
+        message: S,
+        source: E,
     ) -> Self {
         Self {
             message: message.into(),
@@ -135,10 +137,11 @@ impl BacktraceError {
             source: Some(Box::new(source)),
         }
     }
-    
-    /// Get the backtrace if available
-    pub fn backtrace(&self) -> Option<&Backtrace> {
-        Some(&self.backtrace)
+
+    /// Get the backtrace
+    #[must_use]
+    pub const fn backtrace(&self) -> &Backtrace {
+        &self.backtrace
     }
 }
 
@@ -152,7 +155,9 @@ impl std::fmt::Display for BacktraceError {
 #[cfg(feature = "backtrace")]
 impl std::error::Error for BacktraceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_ref().map(|s| s.as_ref() as &(dyn std::error::Error + 'static))
+        self.source
+            .as_ref()
+            .map(|s| s.as_ref() as &(dyn std::error::Error + 'static))
     }
 }
 
@@ -165,52 +170,52 @@ pub enum ErrorCode {
     ConfigParse = 1001,
     ConfigMissing = 1002,
     ConfigTypeMismatch = 1003,
-    
+
     // Signal handling errors: 2000-2999
     SignalRegisterFailed = 2000,
     SignalSendFailed = 2001,
     SignalInvalid = 2002,
-    
+
     // Shutdown errors: 3000-3999
     ShutdownTimeout = 3000,
     ShutdownAlreadyInProgress = 3001,
     ShutdownFailed = 3002,
-    
+
     // Subsystem errors: 4000-4999
     SubsystemStartFailed = 4000,
     SubsystemStopFailed = 4001,
     SubsystemNotFound = 4002,
     SubsystemAlreadyRegistered = 4003,
     SubsystemStateInvalid = 4004,
-    
+
     // IO errors: 5000-5999
     IoError = 5000,
     FileNotFound = 5001,
     FilePermissionDenied = 5002,
-    
+
     // Runtime errors: 6000-6999
     RuntimePanic = 6000,
     RuntimeAsyncError = 6001,
     LockFailed = 6002,
     RuntimeSpawnError = 6003,
-    
+
     // Resource errors: 7000-7999
     ResourceExhaustedMemory = 7000,
     ResourceExhaustedCpu = 7001,
     ResourceExhaustedFileDescriptors = 7002,
-    
+
     // Timeout errors: 8000-8999
     TimeoutOperation = 8000,
     TimeoutConnection = 8001,
-    
+
     // State errors: 9000-9999
     InvalidStateTransition = 9000,
     InvalidStateValue = 9001,
-    
+
     // Platform errors: 10000-10999
     PlatformNotSupported = 10000,
     PlatformFeatureNotAvailable = 10001,
-    
+
     // Unknown/other errors: 99000+
     Unknown = 99999,
 }
@@ -230,52 +235,52 @@ impl ErrorCode {
             Self::ConfigParse => "CONFIG_PARSE",
             Self::ConfigMissing => "CONFIG_MISSING",
             Self::ConfigTypeMismatch => "CONFIG_TYPE_MISMATCH",
-            
+
             // Signal errors
             Self::SignalRegisterFailed => "SIGNAL_REGISTER_FAILED",
             Self::SignalSendFailed => "SIGNAL_SEND_FAILED",
             Self::SignalInvalid => "SIGNAL_INVALID",
-            
+
             // Shutdown errors
             Self::ShutdownTimeout => "SHUTDOWN_TIMEOUT",
             Self::ShutdownAlreadyInProgress => "SHUTDOWN_ALREADY_IN_PROGRESS",
             Self::ShutdownFailed => "SHUTDOWN_FAILED",
-            
+
             // Subsystem errors
             Self::SubsystemStartFailed => "SUBSYSTEM_START_FAILED",
             Self::SubsystemStopFailed => "SUBSYSTEM_STOP_FAILED",
             Self::SubsystemNotFound => "SUBSYSTEM_NOT_FOUND",
             Self::SubsystemAlreadyRegistered => "SUBSYSTEM_ALREADY_REGISTERED",
             Self::SubsystemStateInvalid => "SUBSYSTEM_STATE_INVALID",
-            
+
             // IO errors
             Self::IoError => "IO_ERROR",
             Self::FileNotFound => "FILE_NOT_FOUND",
             Self::FilePermissionDenied => "FILE_PERMISSION_DENIED",
-            
+
             // Runtime errors
             Self::RuntimePanic => "RUNTIME_PANIC",
             Self::RuntimeAsyncError => "RUNTIME_ASYNC_ERROR",
             Self::LockFailed => "LOCK_FAILED",
             Self::RuntimeSpawnError => "RUNTIME_SPAWN_ERROR",
-            
+
             // Resource errors
             Self::ResourceExhaustedMemory => "RESOURCE_EXHAUSTED_MEMORY",
             Self::ResourceExhaustedCpu => "RESOURCE_EXHAUSTED_CPU",
             Self::ResourceExhaustedFileDescriptors => "RESOURCE_EXHAUSTED_FILE_DESCRIPTORS",
-            
+
             // Timeout errors
             Self::TimeoutOperation => "TIMEOUT_OPERATION",
             Self::TimeoutConnection => "TIMEOUT_CONNECTION",
-            
+
             // State errors
             Self::InvalidStateTransition => "INVALID_STATE_TRANSITION",
             Self::InvalidStateValue => "INVALID_STATE_VALUE",
-            
+
             // Platform errors
             Self::PlatformNotSupported => "PLATFORM_NOT_SUPPORTED",
             Self::PlatformFeatureNotAvailable => "PLATFORM_FEATURE_NOT_AVAILABLE",
-            
+
             // Unknown errors
             Self::Unknown => "UNKNOWN_ERROR",
         }
@@ -295,7 +300,8 @@ pub enum Error {
         message: String,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 
     /// Signal handling errors
@@ -309,7 +315,8 @@ pub enum Error {
         signal: Option<i32>,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 
     /// Shutdown coordination errors
@@ -323,7 +330,8 @@ pub enum Error {
         timeout_ms: Option<u64>,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 
     /// Subsystem management errors
@@ -337,7 +345,8 @@ pub enum Error {
         message: String,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 
     /// I/O operation errors
@@ -349,9 +358,10 @@ pub enum Error {
         message: String,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
-    
+
     /// Resource exhaustion errors
     #[error("Resource exhausted [{code}]: {resource} - {message}")]
     ResourceExhausted {
@@ -363,7 +373,8 @@ pub enum Error {
         message: String,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 
     /// Timeout errors
@@ -377,7 +388,8 @@ pub enum Error {
         timeout_ms: u64,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 
     /// Invalid state errors
@@ -391,7 +403,8 @@ pub enum Error {
         current_state: Option<String>,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 
     /// Platform-specific errors
@@ -405,9 +418,10 @@ pub enum Error {
         platform: String,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
-    
+
     /// Runtime errors
     #[error("Runtime error [{code}]: {message}")]
     Runtime {
@@ -417,32 +431,72 @@ pub enum Error {
         message: String,
         /// Optional source error for better context
         #[source]
-                source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        source: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
     },
 }
 
 impl Error {
     // Helper methods removed as they're no longer needed with direct field formatting
-    
+
     #[cfg(feature = "backtrace")]
     /// Get a backtrace for the error if available
+    #[must_use]
     pub fn backtrace(&self) -> Option<&std::backtrace::Backtrace> {
         match self {
-            Self::Config { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::Signal { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::Shutdown { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::Subsystem { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::Io { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::Runtime { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::ResourceExhausted { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::Timeout { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::InvalidState { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
-            Self::Platform { source: Some(err), .. } => err.downcast_ref::<BacktraceError>().and_then(|e| e.backtrace()),
+            Self::Config {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::Signal {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::Shutdown {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::Subsystem {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::Io {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::Runtime {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::ResourceExhausted {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::Timeout {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::InvalidState {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
+            Self::Platform {
+                source: Some(err), ..
+            } => err
+                .downcast_ref::<BacktraceError>()
+                .map(|e| e.backtrace()),
             _ => None,
         }
     }
-    
-
 
     /// Create a new configuration error.
     pub fn config<S: Into<String>>(message: S) -> Self {
@@ -472,7 +526,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new signal error with specific code.
     pub fn signal_with_code<S: Into<String>>(code: ErrorCode, message: S) -> Self {
         Self::Signal {
@@ -502,7 +556,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new shutdown error with specific error code.
     pub fn shutdown_with_code<S: Into<String>>(code: ErrorCode, message: S) -> Self {
         Self::Shutdown {
@@ -522,9 +576,13 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new subsystem error with specific error code.
-    pub fn subsystem_with_code<S: Into<String>, M: Into<String>>(code: ErrorCode, name: S, message: M) -> Self {
+    pub fn subsystem_with_code<S: Into<String>, M: Into<String>>(
+        code: ErrorCode,
+        name: S,
+        message: M,
+    ) -> Self {
         Self::Subsystem {
             code,
             name: name.into(),
@@ -562,7 +620,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new runtime error with specific code.
     pub fn runtime_with_code<S: Into<String>>(code: ErrorCode, message: S) -> Self {
         Self::Runtime {
@@ -571,7 +629,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new runtime error with source error.
     pub fn runtime_with_source<S: Into<String>, E: std::error::Error + Send + Sync + 'static>(
         message: S,
@@ -593,7 +651,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new resource exhausted error with specific code.
     pub fn resource_exhausted_with_code<S: Into<String>, M: Into<String>>(
         code: ErrorCode,
@@ -617,7 +675,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new timeout error with specific code and source.
     pub fn timeout_with_source<S: Into<String>, E: std::error::Error + Send + Sync + 'static>(
         operation: S,
@@ -643,7 +701,10 @@ impl Error {
     }
 
     /// Create a new invalid state error with current state.
-    pub fn invalid_state_with_current<S: Into<String>, C: Into<String>>(message: S, current_state: C) -> Self {
+    pub fn invalid_state_with_current<S: Into<String>, C: Into<String>>(
+        message: S,
+        current_state: C,
+    ) -> Self {
         Self::InvalidState {
             code: ErrorCode::InvalidStateTransition,
             message: message.into(),
@@ -651,7 +712,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new invalid state error with specific code.
     pub fn invalid_state_with_code<S: Into<String>>(code: ErrorCode, message: S) -> Self {
         Self::InvalidState {
@@ -671,7 +732,7 @@ impl Error {
             source: None,
         }
     }
-    
+
     /// Create a new platform error with specific code.
     pub fn platform_with_code<S: Into<String>, P: Into<String>>(
         code: ErrorCode,
@@ -687,7 +748,8 @@ impl Error {
     }
 
     /// Check if this error is retryable.
-    #[must_use] pub const fn is_retryable(&self) -> bool {
+    #[must_use]
+    pub const fn is_retryable(&self) -> bool {
         matches!(
             self,
             Self::Io { .. } | Self::Runtime { .. } | Self::ResourceExhausted { .. }
@@ -695,17 +757,20 @@ impl Error {
     }
 
     /// Check if this error is a timeout.
-    #[must_use] pub const fn is_timeout(&self) -> bool {
+    #[must_use]
+    pub const fn is_timeout(&self) -> bool {
         matches!(self, Self::Timeout { .. })
     }
 
     /// Check if this error is configuration-related.
-    #[must_use] pub const fn is_config_error(&self) -> bool {
+    #[must_use]
+    pub const fn is_config_error(&self) -> bool {
         matches!(self, Self::Config { .. })
     }
 
     /// Get the error category for metrics/logging.
-    #[must_use] pub const fn category(&self) -> &'static str {
+    #[must_use]
+    pub const fn category(&self) -> &'static str {
         match self {
             Self::Config { .. } => "config",
             Self::Signal { .. } => "signal",

@@ -29,18 +29,17 @@ impl SignalHandler {
 
     /// Start handling signals for graceful shutdown.
     /// This will register signal handlers and wait for shutdown signals.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if signal handling is already active or if there's a problem
     /// registering signal handlers on the platform.
     pub async fn handle_signals(&self) -> Result<()> {
-        if self.handling_signals.compare_exchange(
-            false, 
-            true, 
-            Ordering::AcqRel, 
-            Ordering::Acquire
-        ).is_err() {
+        if self
+            .handling_signals
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             return Err(Error::invalid_state("Signal handling already started"));
         }
 
@@ -90,29 +89,21 @@ impl SignalHandler {
         use tokio::signal::unix::{signal, SignalKind};
 
         // Set up signal handlers for graceful shutdown
-        let mut sigterm = signal(SignalKind::terminate())
-            .map_err(|e| Error::signal_with_number(
-                format!("Failed to register SIGTERM handler: {e}"), 
-                15
-            ))?;
+        let mut sigterm = signal(SignalKind::terminate()).map_err(|e| {
+            Error::signal_with_number(format!("Failed to register SIGTERM handler: {e}"), 15)
+        })?;
 
-        let mut sigint = signal(SignalKind::interrupt())
-            .map_err(|e| Error::signal_with_number(
-                format!("Failed to register SIGINT handler: {e}"), 
-                2
-            ))?;
+        let mut sigint = signal(SignalKind::interrupt()).map_err(|e| {
+            Error::signal_with_number(format!("Failed to register SIGINT handler: {e}"), 2)
+        })?;
 
-        let mut sigquit = signal(SignalKind::quit())
-            .map_err(|e| Error::signal_with_number(
-                format!("Failed to register SIGQUIT handler: {e}"), 
-                3
-            ))?;
+        let mut sigquit = signal(SignalKind::quit()).map_err(|e| {
+            Error::signal_with_number(format!("Failed to register SIGQUIT handler: {e}"), 3)
+        })?;
 
-        let mut sighup = signal(SignalKind::hangup())
-            .map_err(|e| Error::signal_with_number(
-                format!("Failed to register SIGHUP handler: {e}"), 
-                1
-            ))?;
+        let mut sighup = signal(SignalKind::hangup()).map_err(|e| {
+            Error::signal_with_number(format!("Failed to register SIGHUP handler: {e}"), 1)
+        })?;
 
         info!("Unix signal handlers registered (SIGTERM, SIGINT, SIGQUIT, SIGHUP)");
 
@@ -178,14 +169,20 @@ impl SignalHandler {
         while self.is_handling() {
             if sigterm_flag_clone.load(Ordering::Acquire) {
                 info!("Received SIGTERM, initiating graceful shutdown");
-                if self.shutdown_coordinator.initiate_shutdown(ShutdownReason::Signal(15)) {
+                if self
+                    .shutdown_coordinator
+                    .initiate_shutdown(ShutdownReason::Signal(15))
+                {
                     break;
                 }
             }
 
             if sigint_flag_clone.load(Ordering::Acquire) {
                 info!("Received SIGINT, initiating graceful shutdown");
-                if self.shutdown_coordinator.initiate_shutdown(ShutdownReason::Signal(2)) {
+                if self
+                    .shutdown_coordinator
+                    .initiate_shutdown(ShutdownReason::Signal(2))
+                {
                     break;
                 }
             }
@@ -280,7 +277,8 @@ impl SignalHandler {
         // Install a basic Ctrl+C handler
         ctrlc::set_handler(move || {
             shutdown_flag_clone.store(true, Ordering::Release);
-        }).map_err(|e| Error::signal(format!("Failed to set Ctrl+C handler: {}", e)))?;
+        })
+        .map_err(|e| Error::signal(format!("Failed to set Ctrl+C handler: {}", e)))?;
 
         info!("Windows Ctrl+C handler registered");
 
@@ -291,7 +289,8 @@ impl SignalHandler {
 
         if shutdown_flag.load(Ordering::Acquire) {
             info!("Received Windows console event, initiating graceful shutdown");
-            self.shutdown_coordinator.initiate_shutdown(ShutdownReason::Signal(2));
+            self.shutdown_coordinator
+                .initiate_shutdown(ShutdownReason::Signal(2));
         }
 
         Ok(())
@@ -464,18 +463,17 @@ impl ConfigurableSignalHandler {
     }
 
     /// Start handling configured signals.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if signal handling is already active or if there's a problem
     /// registering signal handlers on the platform.
     pub async fn handle_signals(&self) -> Result<()> {
-        if self.handling_signals.compare_exchange(
-            false, 
-            true, 
-            Ordering::AcqRel, 
-            Ordering::Acquire
-        ).is_err() {
+        if self
+            .handling_signals
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
             return Err(Error::invalid_state("Signal handling already started"));
         }
 
@@ -484,12 +482,24 @@ impl ConfigurableSignalHandler {
         // Log which signals will be handled
         // Pre-allocate vector with exact capacity needed based on configuration
         let mut handled_signals = Vec::with_capacity(6); // Max 6 standard signals
-        if bool::from(self.config.term) { handled_signals.push("SIGTERM"); }
-        if bool::from(self.config.interrupt) { handled_signals.push("SIGINT"); }
-        if bool::from(self.config.quit) { handled_signals.push("SIGQUIT"); }
-        if bool::from(self.config.hangup) { handled_signals.push("SIGHUP"); }
-        if bool::from(self.config.user1) { handled_signals.push("SIGUSR1"); }
-        if bool::from(self.config.user2) { handled_signals.push("SIGUSR2"); }
+        if bool::from(self.config.term) {
+            handled_signals.push("SIGTERM");
+        }
+        if bool::from(self.config.interrupt) {
+            handled_signals.push("SIGINT");
+        }
+        if bool::from(self.config.quit) {
+            handled_signals.push("SIGQUIT");
+        }
+        if bool::from(self.config.hangup) {
+            handled_signals.push("SIGHUP");
+        }
+        if bool::from(self.config.user1) {
+            handled_signals.push("SIGUSR1");
+        }
+        if bool::from(self.config.user2) {
+            handled_signals.push("SIGUSR2");
+        }
 
         info!("Handling signals: {:?}", handled_signals);
 
@@ -555,7 +565,7 @@ impl ConfigurableSignalHandler {
         // Simplified Windows implementation
         #[cfg(feature = "tokio")]
         {
-            use tokio::signal::windows::{ctrl_c, ctrl_break};
+            use tokio::signal::windows::{ctrl_break, ctrl_c};
 
             let mut ctrl_c_stream = ctrl_c()?;
             let mut ctrl_break_stream = ctrl_break()?;
@@ -601,9 +611,9 @@ impl ConfigurableSignalHandler {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
     use super::*;
     use crate::shutdown::ShutdownCoordinator;
+    use std::time::Duration;
 
     #[test]
     fn test_signal_description() {
@@ -632,13 +642,14 @@ mod tests {
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let coordinator = ShutdownCoordinator::new(5000, 10000);
             let handler = SignalHandler::new(coordinator);
-            
+
             assert!(!handler.is_handling());
-            
+
             // Note: We can't easily test the actual signal handling without
             // sending real signals, which would be complex in a test environment
-        }).await;
-        
+        })
+        .await;
+
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 }
