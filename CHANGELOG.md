@@ -12,6 +12,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+### Fixed
+- Fixed `trivially_copy_pass_by_ref` warnings in `error.rs` by modifying `ErrorCode::as_str` to take `self` by value
+- Fixed `needless_pass_by_value` warnings in `shutdown.rs` and `subsystem.rs` by updating methods to take string slices
+- Removed unused imports in `daemon.rs`
+- Fixed `redundant_else` block in `daemon.rs` for logging configuration
+- Fixed type mismatch in `shutdown.rs` where `String` was passed to method expecting `&str`
+
+### Changed
+- Several clippy pedantic warnings remain as documented issues for future improvements:
+  - Missing error documentation in various functions returning `Result`
+  - Potential precision loss in numeric casts (u128 to u64, usize/u64 to f32/f64)
+  - Structure with excessive boolean fields in `SignalConfig`
+  - Unused `async` function that contains no `await` statements
+
+## [0.3.0] - 2025-08-20
+### Added
+- Implemented object pooling system for efficient memory reuse
+- Added string pooling to reduce allocations in hot paths
+- Added vector pooling for common container types
+- Implemented shutdown coordination mechanisms with timeout support
+- Added subsystem lifecycle management with state tracking
+- Added health monitoring hooks for process status reporting
+- Created comprehensive signal handling across platforms
+- Added custom signal handler registration capabilities
+- Zero-allocation hot paths for critical operations
+- Pre-allocated collections in performance-sensitive areas
+- Created configurable restart policies for subsystems
+- Implemented cross-platform file locking to prevent multiple daemon instances
+- Added resource usage tracking (memory, CPU, thread count) with history support
+- Created platform-specific implementations for Linux, macOS, and Windows resource monitoring
+
+### Fixed
+- Added timeout wrappers around all async tests to prevent freezing
+- Improved subsystem shutdown handling to avoid deadlocks and timeouts
+- Modified test_shutdown_coordination to properly handle async notifications
+- Added timeouts to stop_subsystem method to prevent hanging on task completion
+- Fixed config_builder test to ensure proper timeout validation
+- Increased test robustness with explicit timeouts on critical operations
+- Fixed duplicate implementation in ObjectPool to remove code redundancy
+- Fixed object pool test to properly validate pooled object behavior
+- Removed unused imports in subsystem module
+- Fixed unnecessary mutable variable warnings
+- Properly handled unused return values in shutdown module
+- Fixed duplicate error code values in ErrorCode enum
+- Fixed incorrect error constructor references in file locking code
+- Fixed unlocking name collision using fully qualified path
+- Fixed doctest failures in error handling module
+- Fixed clippy warnings in resource tracking implementation
+- Added missing error documentation for public functions
+
+### Changed
+- Enhanced error handling with thiserror integration
+- Improved subsystem registration with memory pooling
+- Optimized signal handler registration process
+- Implemented more robust shutdown sequence with timeouts
+
 
 ## [0.1.0] - 2025-08-19
 
@@ -29,5 +87,6 @@ Initial pre-dev release for backup.
 
 
 [Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...HEAD
-[0.2.0]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...v0.2.0
+[0.6.0]: https://github.com/jamesgober/proc-daemon/compare/v0.3.0...v0.6.0
+[0.3.0]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/jamesgober/proc-forge/releases/tag/v0.1.0

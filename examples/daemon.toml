@@ -1,0 +1,41 @@
+# Example configuration for proc-daemon
+# This file demonstrates all available configuration options
+
+# Daemon identification
+name = "my-production-daemon"
+
+# Logging configuration
+[logging]
+level = "info"          # trace, debug, info, warn, error
+json = false            # Enable JSON structured logging
+color = true            # Enable colored output (ignored for JSON)
+file = "/var/log/my-daemon.log"  # Optional log file
+max_file_size = 104857600        # 100MB log rotation
+max_files = 5                    # Keep 5 rotated files
+
+# Shutdown behavior
+[shutdown]
+timeout_ms = 30000        # 30 seconds graceful shutdown
+force_timeout_ms = 45000  # 45 seconds before force shutdown  
+kill_timeout_ms = 60000   # 60 seconds before SIGKILL (Unix)
+
+# Performance tuning
+[performance]
+worker_threads = 0        # 0 = auto-detect CPU cores
+thread_pinning = false    # Pin threads to CPU cores
+memory_pool_size = 1048576 # 1MB memory pool
+numa_aware = false        # NUMA awareness
+lock_free = true          # Enable lock-free optimizations
+
+# Monitoring and health checks
+[monitoring]
+enable_metrics = true           # Collect performance metrics
+metrics_interval_ms = 1000      # Metrics collection interval
+track_resources = true          # Track CPU/memory usage
+health_checks = true            # Enable subsystem health checks
+health_check_interval_ms = 5000 # Health check interval
+
+# Optional settings
+work_dir = "/var/lib/my-daemon"  # Working directory
+pid_file = "/var/run/my-daemon.pid"  # PID file location
+hot_reload = false               # Enable config hot-reloading
