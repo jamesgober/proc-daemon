@@ -284,6 +284,16 @@ impl ShutdownCoordinator {
         self.inner.is_shutdown()
     }
 
+    /// Get the reason for shutdown, if any.
+    #[must_use]
+    pub fn get_reason(&self) -> Option<ShutdownReason> {
+        if self.is_shutdown() {
+            Some(**self.inner.shutdown_reason.load())
+        } else {
+            None
+        }
+    }
+
     /// Wait for all subsystems to complete graceful shutdown.
     /// Will return when either all subsystems are ready or the timeout is reached.
     ///
@@ -612,7 +622,7 @@ mod tests {
         assert_eq!(stats.total_subsystems, 2);
         assert_eq!(stats.ready_subsystems, 0);
         assert!(!stats.is_complete());
-        
+
         // Use a more reasonable epsilon for floating point comparisons
         const EPSILON: f64 = 1e-6;
         assert!((stats.progress() - 0.0).abs() < EPSILON);
@@ -620,57 +630,57 @@ mod tests {
         handle1.ready();
         let stats = coordinator.get_stats();
         assert_eq!(stats.ready_subsystems, 1);
-        
+
         assert!((stats.progress() - 0.5).abs() < EPSILON);
 
         handle2.ready();
         let stats = coordinator.get_stats();
         assert!(stats.is_complete());
-        
+
         assert!((stats.progress() - 1.0).abs() < EPSILON);
     }
 }
 
-    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-    #[async_std::test]
-    async fn test_shutdown_coordination() {
-        // Add a test timeout to prevent freezing
-        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
-            // Use shorter timeouts for testing
-            let coordinator = ShutdownCoordinator::new(100, 200);
+#[cfg(all(feature = "async-std", not(feature = "tokio")))]
+#[async_std::test]
+async fn test_shutdown_coordination() {
+    // Add a test timeout to prevent freezing
+    let test_result = async_std::future::timeout(Duration::from_secs(5), async {
+        // Use shorter timeouts for testing
+        let coordinator = ShutdownCoordinator::new(100, 200);
 
-            // Create handles for subsystems
-            let handle1 = coordinator.create_handle("subsystem1");
-            let handle2 = coordinator.create_handle("subsystem2");
+        // Create handles for subsystems
+        let handle1 = coordinator.create_handle("subsystem1");
+        let handle2 = coordinator.create_handle("subsystem2");
 
-            // Initially not shutdown
-            assert!(!coordinator.is_shutdown());
-            assert!(!handle1.is_shutdown());
+        // Initially not shutdown
+        assert!(!coordinator.is_shutdown());
+        assert!(!handle1.is_shutdown());
 
-            // Initiate shutdown
-            assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
+        // Initiate shutdown
+        assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
 
-            // Should be shutdown now
-            assert!(coordinator.is_shutdown());
-            assert!(handle1.is_shutdown());
+        // Should be shutdown now
+        assert!(coordinator.is_shutdown());
+        assert!(handle1.is_shutdown());
 
-            // Instead of trying to listen for the cancelled() notification,
-            // we'll just verify that the handle is properly marked as shutdown
-            assert!(handle1.is_shutdown());
-            assert!(handle2.is_shutdown());
+        // Instead of trying to listen for the cancelled() notification,
+        // we'll just verify that the handle is properly marked as shutdown
+        assert!(handle1.is_shutdown());
+        assert!(handle2.is_shutdown());
 
-            // Mark subsystems as ready
-            handle1.ready();
-            handle2.ready();
+        // Mark subsystems as ready
+        handle1.ready();
+        handle2.ready();
 
-            // All should be ready now
-            let stats = coordinator.get_stats();
-            assert!(stats.is_complete());
-            // Use a more reasonable epsilon for floating point comparisons
-            const EPSILON: f64 = 1e-6;
-            assert!((stats.progress() - 1.0).abs() < EPSILON);
-        })
-        .await;
+        // All should be ready now
+        let stats = coordinator.get_stats();
+        assert!(stats.is_complete());
+        // Use a more reasonable epsilon for floating point comparisons
+        const EPSILON: f64 = 1e-6;
+        assert!((stats.progress() - 1.0).abs() < EPSILON);
+    })
+    .await;
 
-        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
-    }
+    assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+}

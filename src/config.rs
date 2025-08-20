@@ -4,7 +4,7 @@
 //! from multiple sources with clear precedence rules. Built on top of figment
 //! for maximum flexibility and performance.
 
-use figment::providers::{Env, Serialized};
+use figment::providers::{Env, Format, Serialized};
 use figment::{Figment, Provider};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -236,7 +236,7 @@ impl Config {
             } else {
                 result
             };
-            
+
             result
         } else {
             figment
@@ -530,9 +530,12 @@ mod tests {
             .name("test-daemon")
             .log_level(LogLevel::Debug)
             .json_logging(true)
-            .shutdown_timeout(Duration::from_secs(10)).unwrap()
-            .force_shutdown_timeout(Duration::from_secs(20)).unwrap() // Force timeout > shutdown timeout
-            .kill_timeout(Duration::from_secs(30)).unwrap() // Kill timeout > force timeout
+            .shutdown_timeout(Duration::from_secs(10))
+            .unwrap()
+            .force_shutdown_timeout(Duration::from_secs(20))
+            .unwrap() // Force timeout > shutdown timeout
+            .kill_timeout(Duration::from_secs(30))
+            .unwrap() // Kill timeout > force timeout
             .worker_threads(4)
             .build()
             .unwrap();

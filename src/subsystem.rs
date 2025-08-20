@@ -14,7 +14,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 /// Unique identifier for a subsystem.
 pub type SubsystemId = u64;
@@ -267,6 +267,45 @@ impl SubsystemManager {
         self.register(subsystem)
     }
 
+    /// Register a closure as a subsystem.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn register_closure<F>(&self, closure_subsystem: F, name: &str) -> SubsystemId
+    where
+        F: Fn(ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+    {
+        // Create a ClosureSubsystem wrapper
+        struct ClosureSubsystemWrapper<F> {
+            name: String,
+            func: F,
+        }
+        
+        impl<F> Subsystem for ClosureSubsystemWrapper<F> 
+        where 
+            F: Fn(ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+        {
+            fn run(&self, shutdown: ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+                (self.func)(shutdown)
+            }
+            
+            fn name(&self) -> &str {
+                &self.name
+            }
+        }
+        
+        // Create the wrapper with the string pool name
+        let pooled_name = self.string_pool.get_with_value(name).to_string();
+        let wrapper = ClosureSubsystemWrapper {
+            name: pooled_name,
+            func: closure_subsystem,
+        };
+        
+        // Register the wrapped subsystem
+        self.register(wrapper)
+    }
+
     /// Start a specific subsystem.
     ///
     /// # Panics
@@ -288,10 +327,11 @@ impl SubsystemManager {
 
         self.update_state(id, SubsystemState::Starting);
 
-        let _subsystem = Arc::clone(&entry.subsystem);
-        let _shutdown_handle = entry.shutdown_handle.clone();
+        // Clone variables needed for the task
+        let subsystem = Arc::clone(&entry.subsystem);
+        let shutdown_handle = entry.shutdown_handle.clone();
         // Get the subsystem name directly
-        let subsystem_name = entry.subsystem.name();
+        let subsystem_name = entry.subsystem.name().to_string();
 
         #[cfg(feature = "tokio")]
         {
@@ -303,7 +343,7 @@ impl SubsystemManager {
 
             // Move everything required into the task, avoiding reference to self
             let task = tokio::spawn(async move {
-                let result = subsystem.run(shutdown_handle).await;
+                let result: Result<()> = subsystem.run(shutdown_handle).await;
 
                 // Update state based on result
                 match &result {
@@ -381,8 +421,8 @@ impl SubsystemManager {
                 .clone()
         };
 
-        // Use pooled string to avoid allocation
-        let _subsystem_name = self.string_pool.get_with_value(entry.subsystem.name());
+        // Get subsystem name for logging
+        let subsystem_name = self.string_pool.get_with_value(entry.subsystem.name());
         self.update_state(id, SubsystemState::Stopping);
 
         // Signal shutdown to the subsystem
@@ -844,7 +884,7 @@ mod tests {
     impl Subsystem for TestSubsystem {
         fn run(
             &self,
-            shutdown: ShutdownHandle,
+            mut shutdown: ShutdownHandle,
         ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
             let should_fail = self.should_fail;
             Box::pin(async move {
@@ -902,7 +942,7 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
+
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     #[async_std::test]
     async fn test_subsystem_registration() {
@@ -926,7 +966,6 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
 
     #[cfg(feature = "tokio")]
     #[tokio::test]
@@ -954,9 +993,9 @@ mod tests {
             // Stop the subsystem with a smaller timeout
             let stop_result =
                 tokio::time::timeout(Duration::from_millis(1000), manager.stop_subsystem(id)).await;
-                
+
             assert!(stop_result.is_ok());
-            
+
             // Verify it has stopped
             let metadata = manager.get_subsystem_metadata(id).unwrap();
             assert_eq!(metadata.state, SubsystemState::Stopped);
@@ -965,7 +1004,7 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
+
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     #[async_std::test]
     async fn test_subsystem_start_stop() {
@@ -991,7 +1030,8 @@ mod tests {
 
             // Stop the subsystem with a smaller timeout
             let stop_result =
-                async_std::future::timeout(Duration::from_millis(1000), manager.stop_subsystem(id)).await;
+                async_std::future::timeout(Duration::from_millis(1000), manager.stop_subsystem(id))
+                    .await;
             assert!(stop_result.is_ok(), "Subsystem stop operation timed out");
             assert!(stop_result.unwrap().is_ok(), "Failed to stop subsystem");
 
@@ -1028,7 +1068,7 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
+
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     #[async_std::test]
     #[ignore = "Failure state transitions behave differently in async-std due to its task model"]
@@ -1039,11 +1079,11 @@ mod tests {
         //
         // The functionality is instead verified through other tests that don't rely on the specific
         // failure propagation mechanism.
-        
+
         // This is a placeholder test to maintain API parity with the tokio version.
         let coordinator = ShutdownCoordinator::new(5000, 10000);
         let _manager = SubsystemManager::new(coordinator);
-        
+
         // Test passes by being ignored
     }
 
@@ -1070,7 +1110,7 @@ mod tests {
 
             // Create a closure-based subsystem with faster response to shutdown
             let name = "closure_test".to_string();
-            let closure_subsystem = Box::new(move |shutdown: ShutdownHandle| {
+            let closure_subsystem = Box::new(move |mut shutdown: ShutdownHandle| {
                 let _name = name.clone(); // Keep the name for potential future use
                 Box::pin(async move {
                     loop {
@@ -1113,7 +1153,7 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
+
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     #[async_std::test]
     async fn test_closure_subsystem() {
@@ -1136,7 +1176,7 @@ mod tests {
             // Verify it's running
             let metadata = manager.get_subsystem_metadata(id).unwrap();
             assert_eq!(metadata.state, SubsystemState::Running);
-            
+
             // Stop the subsystem
             manager.stop_subsystem(id).await.unwrap();
 

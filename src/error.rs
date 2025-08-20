@@ -443,16 +443,36 @@ impl Error {
     #[must_use]
     pub fn backtrace(&self) -> Option<&Backtrace> {
         match self {
-            Self::Config { source: Some(err), .. } |
-            Self::Subsystem { source: Some(err), .. } |
-            Self::Io { source: Some(err), .. } |
-            Self::Runtime { source: Some(err), .. } |
-            Self::ResourceExhausted { source: Some(err), .. } |
-            Self::Timeout { source: Some(err), .. } |
-            Self::InvalidState { source: Some(err), .. } |
-            Self::Platform { source: Some(err), .. } |
-            Self::Signal { source: Some(err), .. } |
-            Self::Shutdown { source: Some(err), .. } => err
+            Self::Config {
+                source: Some(err), ..
+            }
+            | Self::Subsystem {
+                source: Some(err), ..
+            }
+            | Self::Io {
+                source: Some(err), ..
+            }
+            | Self::Runtime {
+                source: Some(err), ..
+            }
+            | Self::ResourceExhausted {
+                source: Some(err), ..
+            }
+            | Self::Timeout {
+                source: Some(err), ..
+            }
+            | Self::InvalidState {
+                source: Some(err), ..
+            }
+            | Self::Platform {
+                source: Some(err), ..
+            }
+            | Self::Signal {
+                source: Some(err), ..
+            }
+            | Self::Shutdown {
+                source: Some(err), ..
+            } => err
                 .downcast_ref::<BacktraceError>()
                 .map(BacktraceError::backtrace),
             _ => None,

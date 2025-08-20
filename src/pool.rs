@@ -83,7 +83,7 @@ impl<T: Send + 'static> ObjectPool<T> {
     /// # Panics
     ///
     /// Will panic if the internal mutex is poisoned.
-    pub fn get(&self) -> PooledObject<T> {
+    pub fn get(&self) -> PooledObject<'_, T> {
         let object = {
             let mut available = self.available.lock().unwrap();
             available.pop_front().unwrap_or_else(|| (self.create_fn)())
@@ -170,14 +170,14 @@ impl StringPool {
     }
 
     /// Get a string from the pool or create a new one if the pool is empty.
-    pub fn get(&self) -> PooledString {
+    pub fn get(&self) -> PooledString<'_> {
         let mut string = self.inner.get();
         string.clear(); // Ensure the string is empty
         PooledString(string)
     }
 
     /// Get a string from the pool and initialize it with the provided value.
-    pub fn get_with_value<S: AsRef<str>>(&self, value: S) -> PooledString {
+    pub fn get_with_value<S: AsRef<str>>(&self, value: S) -> PooledString<'_> {
         let mut string = self.inner.get();
         string.clear(); // Ensure the string is empty
         string.push_str(value.as_ref());
@@ -240,7 +240,7 @@ impl<T: Send + 'static> VecPool<T> {
     }
 
     /// Get a vector from the pool.
-    pub fn get(&self) -> PooledVec<T> {
+    pub fn get(&self) -> PooledVec<'_, T> {
         let mut vec = self.inner.get();
         vec.clear(); // Ensure it's empty
         PooledVec(vec)

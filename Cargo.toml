@@ -114,8 +114,9 @@ ctrlc = "3.4"
 windows = { version = "0.58", features = [
     "Win32_System_Console",
     "Win32_Foundation",
-    "Win32_System_Threading"
-] }
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus"
+], optional = true }
 ctrlc = "3.4"
 
 [dev-dependencies]
@@ -137,6 +138,7 @@ metrics = ["dep:metrics"]
 console = ["dep:console"] 
 json-logs = ["serde_json", "serde"]
 config-watch = ["notify"]
+windows-monitoring = ["windows"]
 backtrace = []
 serde = []
 

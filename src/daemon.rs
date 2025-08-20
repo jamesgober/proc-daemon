@@ -123,7 +123,7 @@ impl Daemon {
         }
 
         // Wait for signal handler task to complete
-        if let Some(_task) = signal_task {
+        if let Some(task) = signal_task {
             #[cfg(feature = "tokio")]
             {
                 if let Err(e) = task.await {
@@ -479,7 +479,7 @@ macro_rules! subsystem {
 #[macro_export]
 macro_rules! task {
     ($name:expr, $body:expr) => {
-        |shutdown: $crate::shutdown::ShutdownHandle| async move {
+        |mut shutdown: $crate::shutdown::ShutdownHandle| async move {
             loop {
                 #[cfg(feature = "tokio")]
                 {
@@ -488,7 +488,7 @@ macro_rules! task {
                             tracing::info!("Task '{}' shutting down", $name);
                             break;
                         }
-                        _ = async $body => {}
+                        _ = async { $body } => {}
                     }
                 }
 
@@ -515,7 +515,7 @@ mod tests {
     use std::pin::Pin;
     use std::time::Duration;
 
-    async fn test_subsystem(shutdown: crate::shutdown::ShutdownHandle) -> Result<()> {
+    async fn test_subsystem(mut shutdown: crate::shutdown::ShutdownHandle) -> Result<()> {
         loop {
             #[cfg(feature = "tokio")]
             {
@@ -639,7 +639,8 @@ mod tests {
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             let config = Config::builder()
                 .name("test-daemon")
-                .shutdown_timeout(Duration::from_millis(100)).unwrap()
+                .shutdown_timeout(Duration::from_millis(100))
+                .unwrap()
                 .build()
                 .unwrap();
 
@@ -667,7 +668,8 @@ mod tests {
         let test_result = async_std::future::timeout(Duration::from_secs(5), async {
             let config = Config::builder()
                 .name("test-daemon")
-                .shutdown_timeout(Duration::from_millis(100)).unwrap()
+                .shutdown_timeout(Duration::from_millis(100))
+                .unwrap()
                 .build()
                 .unwrap();
 
@@ -714,7 +716,7 @@ mod tests {
     impl Subsystem for TestSubsystemStruct {
         fn run(
             &self,
-            shutdown: crate::shutdown::ShutdownHandle,
+            mut shutdown: crate::shutdown::ShutdownHandle,
         ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
             Box::pin(async move {
                 loop {
@@ -767,7 +769,7 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
+
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     #[async_std::test]
     async fn test_daemon_with_struct_subsystem() {
@@ -815,7 +817,7 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
+
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     #[async_std::test]
     async fn test_daemon_signal_configuration() {
@@ -867,7 +869,7 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
-    
+
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     #[async_std::test]
     async fn test_macro_usage() {

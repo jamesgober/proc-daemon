@@ -16,26 +16,52 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```ignore
 //! use proc_daemon::resources::{ResourceTracker, ResourceUsage};
 //! use std::time::Duration;
 //!
-//! #[tokio::main]
-//! async fn main() -> proc_daemon::Result<()> {
-//!     // Create a new resource tracker sampling every second
-//!     let mut tracker = ResourceTracker::new(Duration::from_secs(1));
-//!     
+//! // Create a new resource tracker sampling every second
+//! let mut tracker = ResourceTracker::new(Duration::from_secs(1));
+//!
+//! // Get the current resource usage
+//! let usage = tracker.current_usage();
+//! println!("Memory: {}MB, CPU: {}%", usage.memory_mb(), usage.cpu_percent());
+//! ```
+//!
+//! With tokio runtime:
+//!
+//! ```ignore
+//! # use proc_daemon::resources::ResourceTracker;
+//! # use std::time::Duration;
+//! # let mut tracker = ResourceTracker::new(Duration::from_secs(1));
+//! #[cfg(feature = "tokio")]
+//! async {
 //!     // Start tracking
-//!     tracker.start()?;
+//!     tracker.start().unwrap();
 //!     
-//!     // Get the current resource usage
-//!     let usage: ResourceUsage = tracker.current_usage();
-//!     println!("Memory: {}MB, CPU: {}%", usage.memory_mb(), usage.cpu_percent());
+//!     // ... use the tracker ...
+//!     
+//!     // Stop tracking when done
+//!     tracker.stop().await;
+//! };
+//! ```
+//!
+//! With async-std runtime:
+//!
+//! ```ignore
+//! # use proc_daemon::resources::ResourceTracker;
+//! # use std::time::Duration;
+//! # let mut tracker = ResourceTracker::new(Duration::from_secs(1));
+//! #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+//! async {
+//!     // Start tracking
+//!     tracker.start().unwrap();
+//!     
+//!     // ... use the tracker ...
 //!     
 //!     // Stop tracking when done
 //!     tracker.stop();
-//!     Ok(())
-//! }
+//! };
 //! ```
 
 use crate::error::{Error, Result};
@@ -44,11 +70,10 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "tokio")]
 use tokio::task::JoinHandle;
-
-#[cfg(feature = "async-std")]
-use async_std::task::JoinHandle;
 #[cfg(feature = "tokio")]
 use tokio::time;
+#[cfg(feature = "async-std")]
+use async_std::task::JoinHandle as AsyncJoinHandle;
 
 #[cfg(target_os = "linux")]
 use std::fs::File;
@@ -58,7 +83,13 @@ use std::io::{BufRead, BufReader};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+use std::mem::size_of;
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+use windows::Win32::Foundation::{CloseHandle, HANDLE};
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION};
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use windows::Win32::System::ProcessStatus;
 
 /// Represents the current resource usage of the process
@@ -173,53 +204,7 @@ impl ResourceTracker {
     ///
     /// Returns an error if the process ID cannot be determined or
     /// if there's an issue with the system APIs when gathering resource metrics
-    #[cfg(feature = "tokio")]
-    pub fn start(&mut self) -> Result<()> {
-        if self.task_handle.is_some() {
-            return Ok(()); // Already started
-        }
-
-        let sample_interval = self.sample_interval;
-        let usage_history = Arc::clone(&self.history);
-        let current_usage = Arc::clone(&self.current_usage);
-        let pid = self.pid;
-
-        let handle = tokio::spawn(async move {
-            let mut interval_timer = time::interval(sample_interval);
-            let mut last_cpu_time = 0.0;
-            let mut last_timestamp = Instant::now();
-
-            loop {
-                interval_timer.tick().await;
-
-                // Get current resource usage
-                if let Ok(usage) =
-                    ResourceTracker::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
-                {
-                    // Update current usage
-                    if let Ok(mut current) = current_usage.write() {
-                        *current = usage.clone();
-                    }
-
-                    // Update history
-                    if let Ok(mut hist) = history.write() {
-                        hist.push(usage);
-
-                        // Trim history if needed
-                        if hist.len() > max_history {
-                            hist.remove(0);
-                        }
-                    }
-                }
-            }
-        });
-
-        self.task_handle = Some(handle);
-        Ok(())
-    }
-
-    /// Stops the resource tracking
-    #[cfg(feature = "async-std")]
+    #[cfg(all(feature = "tokio", not(feature = "async-std")))]
     pub fn start(&mut self) -> Result<()> {
         if self.task_handle.is_some() {
             return Ok(()); // Already started
@@ -231,17 +216,20 @@ impl ResourceTracker {
         let pid = self.pid;
         let max_history = self.max_history;
 
-        let handle = async_std::task::spawn(async move {
+        let handle = tokio::spawn(async move {
+            let mut interval_timer = time::interval(sample_interval);
             let mut last_cpu_time = 0.0;
             let mut last_timestamp = Instant::now();
 
             loop {
-                async_std::task::sleep(sample_interval).await;
+                interval_timer.tick().await;
 
                 // Get current resource usage
-                if let Ok(usage) =
-                    ResourceTracker::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
-                {
+                if let Ok(usage) = ResourceTracker::sample_resource_usage(
+                    pid,
+                    &mut last_cpu_time,
+                    &mut last_timestamp,
+                ) {
                     // Update current usage
                     if let Ok(mut current) = current_usage.write() {
                         *current = usage.clone();
@@ -264,7 +252,58 @@ impl ResourceTracker {
         Ok(())
     }
 
-    #[cfg(feature = "tokio")]
+    /// Starts the resource tracking
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    pub fn start(&mut self) -> Result<()> {
+        if self.task_handle.is_some() {
+            return Ok(()); // Already started
+        }
+
+        let sample_interval = self.sample_interval;
+        let usage_history = Arc::clone(&self.history);
+        let current_usage = Arc::clone(&self.current_usage);
+        let pid = self.pid;
+        let max_history = self.max_history; // Clone max_history to use inside async block
+
+        let handle = async_std::task::spawn(async move {
+            let mut last_cpu_time = 0.0;
+            let mut last_timestamp = Instant::now();
+
+            loop {
+                async_std::task::sleep(sample_interval).await;
+
+                // Get current resource usage
+                if let Ok(usage) = ResourceTracker::sample_resource_usage(
+                    pid,
+                    &mut last_cpu_time,
+                    &mut last_timestamp,
+                ) {
+                    // Update current usage
+                    if let Ok(mut current) = current_usage.write() {
+                        *current = usage.clone();
+                    }
+
+                    // Update history
+                    if let Ok(mut hist) = usage_history.write() {
+                        hist.push(usage);
+
+                        // Trim history if needed
+                        if hist.len() > self.max_history {
+                            hist.remove(0);
+                        }
+                    }
+                }
+            }
+        });
+
+        self.task_handle = Some(handle);
+        Ok(())
+    }
+
+    /// Stops the resource tracker, cancelling any ongoing monitoring task.
+    /// 
+    /// For tokio, this aborts the task and awaits its completion.
+    #[cfg(all(feature = "tokio", not(feature = "async-std")))]
     pub async fn stop(&mut self) {
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
@@ -273,9 +312,9 @@ impl ResourceTracker {
     }
 
     /// Stops the resource tracker, cancelling any ongoing monitoring task.
-    /// 
+    ///
     /// For async-std, this simply drops the JoinHandle which cancels the task.
-    #[cfg(feature = "async-std")]
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     pub fn stop(&mut self) {
         // Just drop the handle, which will cancel the task on async-std
         self.task_handle.take();
@@ -474,7 +513,7 @@ impl ResourceTracker {
         Ok((cpu_percent, thread_count))
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
     fn get_memory_windows(pid: u32) -> Result<u64> {
         use windows::Win32::Foundation::CloseHandle;
         use windows::Win32::System::ProcessStatus::GetProcessMemoryInfo;
@@ -507,8 +546,13 @@ impl ResourceTracker {
 
         Ok(pmc.WorkingSetSize)
     }
+    
+    #[cfg(all(target_os = "windows", not(feature = "windows-monitoring")))]
+    fn get_memory_windows(_pid: u32) -> Result<u64> {
+        Err(Error::runtime("Windows monitoring not enabled. Enable the 'windows-monitoring' feature".to_string()))
+    }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
     fn get_cpu_windows(
         pid: u32,
         last_cpu_time: &mut f64,
@@ -586,9 +630,18 @@ impl ResourceTracker {
 
         Ok((cpu_percent, thread_count))
     }
+    
+    #[cfg(all(target_os = "windows", not(feature = "windows-monitoring")))]
+    fn get_cpu_windows(
+        _pid: u32,
+        _last_cpu_time: &mut f64,
+        _last_timestamp: &mut Instant,
+    ) -> Result<(f64, u32)> {
+        Err(Error::runtime("Windows monitoring not enabled. Enable the 'windows-monitoring' feature".to_string()))
+    }
 
-    #[cfg(target_os = "windows")]
-    fn filetime_to_ns(ft: &FILETIME) -> u64 {
+    #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+    fn filetime_to_ns(ft: &windows::Win32::Foundation::FILETIME) -> u64 {
         // Convert Windows FILETIME to nanoseconds
         let high = (ft.dwHighDateTime as u64) << 32;
         let low = ft.dwLowDateTime as u64;
