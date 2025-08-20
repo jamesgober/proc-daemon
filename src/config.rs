@@ -4,7 +4,7 @@
 //! from multiple sources with clear precedence rules. Built on top of figment
 //! for maximum flexibility and performance.
 
-use figment::providers::{Env, Format, Serialized};
+use figment::providers::{Env, Serialized};
 use figment::{Figment, Provider};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -219,23 +219,28 @@ impl Config {
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
 
-        let mut figment = Figment::from(Serialized::defaults(Self::default()))
+        // Base figment configuration
+        let figment = Figment::from(Serialized::defaults(Config::default()))
             .merge(Env::prefixed("DAEMON_").split("_"));
 
         // Add config file if it exists
-        if path.exists() {
+        let figment = if path.exists() {
+            // We use functional style to avoid mutability warnings
+            let result = figment;
             #[cfg(feature = "toml")]
-            {
-                figment = figment.merge(figment::providers::Toml::file(path));
-            }
+            let result = result.merge(figment::providers::Toml::file(path));
 
             #[cfg(feature = "serde_json")]
-            {
-                if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                    figment = figment.merge(figment::providers::Json::file(path));
-                }
-            }
-        }
+            let result = if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                result.merge(figment::providers::Json::file(path))
+            } else {
+                result
+            };
+            
+            result
+        } else {
+            figment
+        };
 
         figment.extract().map_err(Error::from)
     }

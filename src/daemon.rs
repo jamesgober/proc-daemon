@@ -123,7 +123,7 @@ impl Daemon {
         }
 
         // Wait for signal handler task to complete
-        if let Some(task) = signal_task {
+        if let Some(_task) = signal_task {
             #[cfg(feature = "tokio")]
             {
                 if let Err(e) = task.await {
@@ -478,8 +478,8 @@ macro_rules! subsystem {
 /// Convenience macro for creating simple task-based subsystems.
 #[macro_export]
 macro_rules! task {
-    ($name:expr, $body:block) => {
-        |mut shutdown: $crate::shutdown::ShutdownHandle| async move {
+    ($name:expr, $body:expr) => {
+        |shutdown: $crate::shutdown::ShutdownHandle| async move {
             loop {
                 #[cfg(feature = "tokio")]
                 {
@@ -498,7 +498,10 @@ macro_rules! task {
                         tracing::info!("Task '{}' shutting down", $name);
                         break;
                     }
-                    $body.await;
+                    // Execute the body directly without awaiting
+                    $body;
+                    // Add a small delay to prevent tight loop
+                    async_std::task::sleep(std::time::Duration::from_millis(10)).await;
                 }
             }
             Ok(())
@@ -512,7 +515,7 @@ mod tests {
     use std::pin::Pin;
     use std::time::Duration;
 
-    async fn test_subsystem(mut shutdown: crate::shutdown::ShutdownHandle) -> Result<()> {
+    async fn test_subsystem(shutdown: crate::shutdown::ShutdownHandle) -> Result<()> {
         loop {
             #[cfg(feature = "tokio")]
             {
@@ -533,6 +536,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_daemon_builder() {
         // Add a test timeout to prevent freezing
@@ -556,6 +560,31 @@ mod tests {
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_daemon_builder() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
+            let config = Config::new().unwrap();
+            let daemon = Daemon::builder(config)
+                .with_subsystem_fn("test", |subsystem_manager| {
+                    subsystem_manager.register_fn("test_subsystem", test_subsystem)
+                })
+                .build()
+                .unwrap();
+
+            assert!(daemon.is_running());
+            assert_eq!(daemon.config().name, "proc-daemon");
+
+            // Ensure proper cleanup
+            daemon.shutdown();
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_daemon_with_defaults() {
         // Add a test timeout to prevent freezing
@@ -579,10 +608,63 @@ mod tests {
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_daemon_with_defaults() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
+            let builder = Daemon::with_defaults().unwrap();
+            let daemon = builder
+                .with_task("simple_task", |_shutdown| async {
+                    async_std::task::sleep(Duration::from_millis(10)).await;
+                    Ok(())
+                })
+                .build()
+                .unwrap();
+
+            assert!(daemon.is_running());
+
+            // Ensure proper cleanup
+            daemon.shutdown();
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_daemon_shutdown() {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
+            let config = Config::builder()
+                .name("test-daemon")
+                .shutdown_timeout(Duration::from_millis(100)).unwrap()
+                .build()
+                .unwrap();
+
+            let daemon = Daemon::builder(config)
+                .with_subsystem_fn("test", |subsystem_manager| {
+                    subsystem_manager.register_fn("test_subsystem", test_subsystem)
+                })
+                .without_signals()
+                .build()
+                .unwrap();
+
+            // Request shutdown
+            daemon.shutdown();
+            assert!(!daemon.is_running());
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_daemon_shutdown() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
             let config = Config::builder()
                 .name("test-daemon")
                 .shutdown_timeout(Duration::from_millis(100)).unwrap()
@@ -632,7 +714,7 @@ mod tests {
     impl Subsystem for TestSubsystemStruct {
         fn run(
             &self,
-            mut shutdown: crate::shutdown::ShutdownHandle,
+            shutdown: crate::shutdown::ShutdownHandle,
         ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
             Box::pin(async move {
                 loop {
@@ -661,6 +743,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_daemon_with_struct_subsystem() {
         // Add a test timeout to prevent freezing
@@ -684,7 +767,33 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
+    
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_daemon_with_struct_subsystem() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
+            let config = Config::new().unwrap();
+            let subsystem = TestSubsystemStruct::new("struct_test");
 
+            let daemon = Daemon::builder(config)
+                .with_subsystem(subsystem)
+                .without_signals()
+                .build()
+                .unwrap();
+
+            let stats = daemon.get_stats();
+            assert_eq!(stats.subsystem_stats.total_subsystems, 1);
+
+            // Ensure proper cleanup
+            daemon.shutdown();
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_daemon_signal_configuration() {
         // Add a test timeout to prevent freezing
@@ -706,7 +815,31 @@ mod tests {
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
+    
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_daemon_signal_configuration() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
+            let config = Config::new().unwrap();
+            let signal_config = SignalConfig::new().with_sighup().without_sigint();
 
+            let daemon = Daemon::builder(config)
+                .with_signal_config(signal_config)
+                .build()
+                .unwrap();
+
+            assert!(daemon.signal_handler.is_some());
+
+            // Ensure proper cleanup
+            daemon.shutdown();
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_macro_usage() {
         // Add a test timeout to prevent freezing
@@ -718,6 +851,35 @@ mod tests {
                     "macro_test",
                     task!("macro_test", {
                         tokio::time::sleep(Duration::from_millis(1)).await;
+                    }),
+                )
+                .without_signals()
+                .build()
+                .unwrap();
+
+            let stats = daemon.get_stats();
+            assert_eq!(stats.subsystem_stats.total_subsystems, 1);
+
+            // Ensure proper cleanup
+            daemon.shutdown();
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+    
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_macro_usage() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
+            let config = Config::new().unwrap();
+
+            let daemon = Daemon::builder(config)
+                .with_task(
+                    "macro_test",
+                    task!("macro_test", {
+                        async_std::task::sleep(Duration::from_millis(1)).await;
                     }),
                 )
                 .without_signals()

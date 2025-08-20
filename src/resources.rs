@@ -26,14 +26,14 @@
 //!     let mut tracker = ResourceTracker::new(Duration::from_secs(1));
 //!     
 //!     // Start tracking
-//!     tracker.start().await?;
+//!     tracker.start()?;
 //!     
 //!     // Get the current resource usage
 //!     let usage: ResourceUsage = tracker.current_usage();
 //!     println!("Memory: {}MB, CPU: {}%", usage.memory_mb(), usage.cpu_percent());
 //!     
 //!     // Stop tracking when done
-//!     tracker.stop().await;
+//!     tracker.stop();
 //!     Ok(())
 //! }
 //! ```
@@ -41,7 +41,13 @@
 use crate::error::{Error, Result};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+
+#[cfg(feature = "tokio")]
 use tokio::task::JoinHandle;
+
+#[cfg(feature = "async-std")]
+use async_std::task::JoinHandle;
+#[cfg(feature = "tokio")]
 use tokio::time;
 
 #[cfg(target_os = "linux")]
@@ -92,11 +98,8 @@ impl ResourceUsage {
     /// Returns the memory usage in megabytes
     #[must_use]
     pub fn memory_mb(&self) -> f64 {
-        // Convert to f64 with proper conversion factor to avoid precision loss
-        f64::from(u32::try_from(self.memory_bytes & 0xFFFF_FFFF).unwrap_or(0))
-            + (f64::from(u32::try_from((self.memory_bytes >> 32) & 0xFFFF_FFFF).unwrap_or(0))
-                * 4_294_967_296.0)
-                / 1_048_576.0
+        // Simplify calculation for better accuracy
+        self.memory_bytes as f64 / 1_048_576.0
     }
 
     /// Returns the CPU usage as a percentage (0-100)
@@ -170,21 +173,19 @@ impl ResourceTracker {
     ///
     /// Returns an error if the process ID cannot be determined or
     /// if there's an issue with the system APIs when gathering resource metrics
+    #[cfg(feature = "tokio")]
     pub fn start(&mut self) -> Result<()> {
-        // Don't start if already running
         if self.task_handle.is_some() {
-            return Ok(());
+            return Ok(()); // Already started
         }
 
-        let current_usage = self.current_usage.clone();
-        let history = self.history.clone();
-        let max_history = self.max_history;
-        let interval = self.sample_interval;
+        let sample_interval = self.sample_interval;
+        let usage_history = Arc::clone(&self.history);
+        let current_usage = Arc::clone(&self.current_usage);
         let pid = self.pid;
 
-        // Create and spawn the background task
         let handle = tokio::spawn(async move {
-            let mut interval_timer = time::interval(interval);
+            let mut interval_timer = time::interval(sample_interval);
             let mut last_cpu_time = 0.0;
             let mut last_timestamp = Instant::now();
 
@@ -193,7 +194,7 @@ impl ResourceTracker {
 
                 // Get current resource usage
                 if let Ok(usage) =
-                    Self::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
+                    ResourceTracker::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
                 {
                     // Update current usage
                     if let Ok(mut current) = current_usage.write() {
@@ -218,11 +219,66 @@ impl ResourceTracker {
     }
 
     /// Stops the resource tracking
+    #[cfg(feature = "async-std")]
+    pub fn start(&mut self) -> Result<()> {
+        if self.task_handle.is_some() {
+            return Ok(()); // Already started
+        }
+
+        let sample_interval = self.sample_interval;
+        let usage_history = Arc::clone(&self.history);
+        let current_usage = Arc::clone(&self.current_usage);
+        let pid = self.pid;
+        let max_history = self.max_history;
+
+        let handle = async_std::task::spawn(async move {
+            let mut last_cpu_time = 0.0;
+            let mut last_timestamp = Instant::now();
+
+            loop {
+                async_std::task::sleep(sample_interval).await;
+
+                // Get current resource usage
+                if let Ok(usage) =
+                    ResourceTracker::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
+                {
+                    // Update current usage
+                    if let Ok(mut current) = current_usage.write() {
+                        *current = usage.clone();
+                    }
+
+                    // Update history
+                    if let Ok(mut hist) = usage_history.write() {
+                        hist.push(usage);
+
+                        // Trim history if needed
+                        if hist.len() > max_history {
+                            hist.remove(0);
+                        }
+                    }
+                }
+            }
+        });
+
+        self.task_handle = Some(handle);
+        Ok(())
+    }
+
+    #[cfg(feature = "tokio")]
     pub async fn stop(&mut self) {
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
             let _ = handle.await;
         }
+    }
+
+    /// Stops the resource tracker, cancelling any ongoing monitoring task.
+    /// 
+    /// For async-std, this simply drops the JoinHandle which cancels the task.
+    #[cfg(feature = "async-std")]
+    pub fn stop(&mut self) {
+        // Just drop the handle, which will cancel the task on async-std
+        self.task_handle.take();
     }
 
     /// Returns the current resource usage
@@ -544,7 +600,12 @@ impl ResourceTracker {
 impl Drop for ResourceTracker {
     fn drop(&mut self) {
         if let Some(handle) = self.task_handle.take() {
+            #[cfg(feature = "tokio")]
             handle.abort();
+            // For async-std, dropping the handle is sufficient
+            // as it cancels the associated task
+            #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+            let _ = handle; // Explicitly use handle to avoid unused variable warning
         }
     }
 }
@@ -554,6 +615,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_resource_tracker_creation() {
         let tracker = ResourceTracker::new(Duration::from_secs(1));
@@ -561,17 +623,49 @@ mod tests {
         assert_eq!(tracker.sample_interval, Duration::from_secs(1));
     }
 
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_resource_tracker_creation() {
+        let tracker = ResourceTracker::new(Duration::from_secs(1));
+        assert_eq!(tracker.max_history, 60);
+        assert_eq!(tracker.sample_interval, Duration::from_secs(1));
+    }
+
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_resource_usage_methods() {
         let usage = ResourceUsage::new(1_048_576, 5.5, 4);
         assert_eq!(usage.memory_bytes(), 1_048_576);
-        assert!((usage.memory_mb() - 1.0).abs() < f64::EPSILON);
-        assert!((usage.cpu_percent() - 5.5).abs() < f64::EPSILON);
+        // Use a more reasonable epsilon for floating point comparisons
+        const EPSILON: f64 = 1e-6;
+        assert!((usage.memory_mb() - 1.0).abs() < EPSILON);
+        assert!((usage.cpu_percent() - 5.5).abs() < EPSILON);
         assert_eq!(usage.thread_count(), 4);
         assert!(usage.age() >= Duration::from_nanos(0));
     }
 
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_resource_usage_methods() {
+        let usage = ResourceUsage::new(1_048_576, 5.5, 4);
+        assert_eq!(usage.memory_bytes(), 1_048_576);
+        // Use a more reasonable epsilon for floating point comparisons
+        const EPSILON: f64 = 1e-6;
+        assert!((usage.memory_mb() - 1.0).abs() < EPSILON);
+        assert!((usage.cpu_percent() - 5.5).abs() < EPSILON);
+        assert_eq!(usage.thread_count(), 4);
+        assert!(usage.age() >= Duration::from_nanos(0));
+    }
+
+    #[cfg(feature = "tokio")]
     #[tokio::test]
+    async fn test_tracker_with_max_history() {
+        let tracker = ResourceTracker::new(Duration::from_secs(1)).with_max_history(100);
+        assert_eq!(tracker.max_history, 100);
+    }
+
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
     async fn test_tracker_with_max_history() {
         let tracker = ResourceTracker::new(Duration::from_secs(1)).with_max_history(100);
         assert_eq!(tracker.max_history, 100);

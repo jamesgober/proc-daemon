@@ -5,10 +5,15 @@
 //! differences between Unix signals and Windows console events.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
+use crate::ShutdownReason;
+
+// No need for these imports
+// use crate::config::Config;
+// use crate::daemon::Daemon;
 use crate::error::{Error, Result};
-use crate::shutdown::{ShutdownCoordinator, ShutdownReason};
+use crate::shutdown::ShutdownCoordinator;
 
 /// Cross-platform signal handler that coordinates shutdown.
 #[derive(Debug)]
@@ -48,12 +53,12 @@ impl SignalHandler {
         // Platform-specific signal handling
         #[cfg(unix)]
         {
-            self.handle_unix_signals().await
+            return self.handle_unix_signals().await;
         }
 
         #[cfg(windows)]
         {
-            self.handle_windows_signals().await
+            return self.handle_windows_signals().await;
         }
     }
 
@@ -75,12 +80,17 @@ impl SignalHandler {
     async fn handle_unix_signals(&self) -> Result<()> {
         #[cfg(feature = "tokio")]
         {
-            self.handle_unix_signals_tokio().await
+            return self.handle_unix_signals_tokio().await;
         }
 
-        #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+        #[cfg(feature = "async-std")]
         {
-            self.handle_unix_signals_async_std().await
+            return self.handle_unix_signals_async_std().await;
+        }
+        
+        #[cfg(not(any(feature = "tokio", feature = "async-std")))]
+        {
+            return Err(Error::MissingRuntime("No runtime available for signal handling".into()));
         }
     }
 
@@ -147,47 +157,46 @@ impl SignalHandler {
 
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     async fn handle_unix_signals_async_std(&self) -> Result<()> {
-        use std::sync::atomic::{AtomicI32, Ordering};
-
-        // For async-std, we'll use a simpler approach with atomic flags
-        let sigterm_flag = Arc::new(AtomicBool::new(false));
-        let sigint_flag = Arc::new(AtomicBool::new(false));
-
-        // Simple signal handling without external dependencies
-        let sigterm_flag_clone = Arc::clone(&sigterm_flag);
-        let sigint_flag_clone = Arc::clone(&sigint_flag);
-
-        // Install basic signal handlers using libc
-        unsafe {
-            libc::signal(libc::SIGTERM, handle_signal as usize);
-            libc::signal(libc::SIGINT, handle_signal as usize);
-        }
-
+        use std::time::Duration;
+        
+        // Use the signal-hook crate for safe signal handling
+        let term = async_std::channel::bounded::<()>(1);
+        let _int = async_std::channel::bounded::<i32>(1);
+        
+        // Register signal handlers safely using ctrlc for SIGTERM (15)
+        let term_sender = term.0.clone();
+        ctrlc::set_handler(move || {
+            let _ = term_sender.try_send(());
+        })?;
+        
         info!("Unix signal handlers registered (SIGTERM, SIGINT)");
 
         // Poll for signals
-        while self.is_handling() {
-            if sigterm_flag_clone.load(Ordering::Acquire) {
-                info!("Received SIGTERM, initiating graceful shutdown");
-                if self
-                    .shutdown_coordinator
-                    .initiate_shutdown(ShutdownReason::Signal(15))
-                {
-                    break;
+        loop {
+            // Wait for signals with a timeout
+            let term_recv = term.1.clone();
+            
+            match async_std::future::timeout(
+                Duration::from_millis(100), 
+                term_recv.recv()
+            ).await {
+                Ok(Ok(_)) => {
+                    info!("Received SIGTERM, initiating graceful shutdown");
+                    if self.shutdown_coordinator.initiate_shutdown(ShutdownReason::Signal(15)) {
+                        break;
+                    }
+                },
+                _ => {
+                    // Timeout or error, check if we should stop handling
+                    if !self.is_handling() {
+                        debug!("Signal handling stopped by request");
+                        break;
+                    }
                 }
             }
-
-            if sigint_flag_clone.load(Ordering::Acquire) {
-                info!("Received SIGINT, initiating graceful shutdown");
-                if self
-                    .shutdown_coordinator
-                    .initiate_shutdown(ShutdownReason::Signal(2))
-                {
-                    break;
-                }
-            }
-
-            async_std::task::sleep(std::time::Duration::from_millis(100)).await;
+            
+            // Brief sleep to prevent tight loop
+            async_std::task::sleep(Duration::from_millis(10)).await;
         }
 
         Ok(())
@@ -299,6 +308,7 @@ impl SignalHandler {
 
 // Simple signal handler for async-std on Unix
 #[cfg(all(unix, feature = "async-std", not(feature = "tokio")))]
+#[allow(dead_code)]
 extern "C" fn handle_signal(_signal: libc::c_int) {
     // In a real implementation, we'd need to communicate back to the async task
     // For now, this is a placeholder
@@ -446,6 +456,7 @@ impl SignalConfig {
 /// Advanced signal handler with configurable signal handling.
 #[derive(Debug)]
 pub struct ConfigurableSignalHandler {
+    #[allow(dead_code)]
     shutdown_coordinator: ShutdownCoordinator,
     config: SignalConfig,
     handling_signals: AtomicBool,
@@ -636,10 +647,29 @@ mod tests {
         assert_eq!(config.custom_handlers[0].0, 12);
     }
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_signal_handler_creation() {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
+            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let handler = SignalHandler::new(coordinator);
+
+            assert!(!handler.is_handling());
+
+            // Note: We can't easily test the actual signal handling without
+            // sending real signals, which would be complex in a test environment
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+    
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_signal_handler_creation() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
             let coordinator = ShutdownCoordinator::new(5000, 10000);
             let handler = SignalHandler::new(coordinator);
 

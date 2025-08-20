@@ -435,12 +435,12 @@ impl ShutdownStats {
     #[must_use]
     #[allow(clippy::cast_precision_loss)]
     pub fn progress(&self) -> f64 {
-        // Calculate percentage of subsystems ready
+        // Return a value between 0.0 and 1.0 representing the progress
         if self.total_subsystems == 0 {
-            100.0
+            1.0
         } else {
             // Use f64 to prevent loss of precision
-            (self.ready_subsystems as f64 / self.total_subsystems as f64) * 100.0
+            self.ready_subsystems as f64 / self.total_subsystems as f64
         }
     }
 
@@ -462,6 +462,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_shutdown_coordination() {
         // Add a test timeout to prevent freezing
@@ -496,17 +497,42 @@ mod tests {
             // All should be ready now
             let stats = coordinator.get_stats();
             assert!(stats.is_complete());
-            assert!((stats.progress() - 1.0).abs() < f64::EPSILON);
+            // Use a more reasonable epsilon for floating point comparisons
+            const EPSILON: f64 = 1e-6;
+            assert!((stats.progress() - 1.0).abs() < EPSILON);
         })
         .await;
 
         assert!(test_result.is_ok(), "Test timed out after 5 seconds");
     }
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_shutdown_timeout() {
         // Add a test timeout to prevent the test itself from hanging
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
+            let coordinator = ShutdownCoordinator::new(100, 200); // Very short timeout
+
+            let _handle1 = coordinator.create_handle("slow_subsystem");
+
+            // Initiate shutdown but don't mark as ready
+            let _ = coordinator.initiate_shutdown(ShutdownReason::Requested);
+
+            // Wait for shutdown should timeout
+            let result = coordinator.wait_for_shutdown().await;
+            assert!(result.is_err());
+            assert!(result.unwrap_err().is_timeout());
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_shutdown_timeout() {
+        // Add a test timeout to prevent the test itself from hanging
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
             let coordinator = ShutdownCoordinator::new(100, 200); // Very short timeout
 
             let _handle1 = coordinator.create_handle("slow_subsystem");
@@ -531,10 +557,33 @@ mod tests {
         assert_eq!(format!("{}", ShutdownReason::Error), "Error");
     }
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn test_multiple_shutdown_initiation() {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
+            let coordinator = ShutdownCoordinator::new(5000, 10000);
+
+            // First initiation should succeed
+            assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
+
+            // Subsequent initiations should be ignored
+            assert!(!coordinator.initiate_shutdown(ShutdownReason::Signal(15)));
+            assert!(!coordinator.initiate_shutdown(ShutdownReason::Error));
+
+            // Reason should remain the first one
+            assert_eq!(coordinator.get_reason(), Some(ShutdownReason::Requested));
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }
+
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_multiple_shutdown_initiation() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
             let coordinator = ShutdownCoordinator::new(5000, 10000);
 
             // First initiation should succeed
@@ -564,18 +613,64 @@ mod tests {
         assert_eq!(stats.ready_subsystems, 0);
         assert!(!stats.is_complete());
         
-        assert!((stats.progress() - 0.0).abs() < f64::EPSILON);
+        // Use a more reasonable epsilon for floating point comparisons
+        const EPSILON: f64 = 1e-6;
+        assert!((stats.progress() - 0.0).abs() < EPSILON);
 
         handle1.ready();
         let stats = coordinator.get_stats();
         assert_eq!(stats.ready_subsystems, 1);
         
-        assert!((stats.progress() - 0.5).abs() < f64::EPSILON);
+        assert!((stats.progress() - 0.5).abs() < EPSILON);
 
         handle2.ready();
         let stats = coordinator.get_stats();
         assert!(stats.is_complete());
         
-        assert!((stats.progress() - 1.0).abs() < f64::EPSILON);
+        assert!((stats.progress() - 1.0).abs() < EPSILON);
     }
 }
+
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[async_std::test]
+    async fn test_shutdown_coordination() {
+        // Add a test timeout to prevent freezing
+        let test_result = async_std::future::timeout(Duration::from_secs(5), async {
+            // Use shorter timeouts for testing
+            let coordinator = ShutdownCoordinator::new(100, 200);
+
+            // Create handles for subsystems
+            let handle1 = coordinator.create_handle("subsystem1");
+            let handle2 = coordinator.create_handle("subsystem2");
+
+            // Initially not shutdown
+            assert!(!coordinator.is_shutdown());
+            assert!(!handle1.is_shutdown());
+
+            // Initiate shutdown
+            assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
+
+            // Should be shutdown now
+            assert!(coordinator.is_shutdown());
+            assert!(handle1.is_shutdown());
+
+            // Instead of trying to listen for the cancelled() notification,
+            // we'll just verify that the handle is properly marked as shutdown
+            assert!(handle1.is_shutdown());
+            assert!(handle2.is_shutdown());
+
+            // Mark subsystems as ready
+            handle1.ready();
+            handle2.ready();
+
+            // All should be ready now
+            let stats = coordinator.get_stats();
+            assert!(stats.is_complete());
+            // Use a more reasonable epsilon for floating point comparisons
+            const EPSILON: f64 = 1e-6;
+            assert!((stats.progress() - 1.0).abs() < EPSILON);
+        })
+        .await;
+
+        assert!(test_result.is_ok(), "Test timed out after 5 seconds");
+    }

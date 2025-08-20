@@ -754,6 +754,12 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<ctrlc::Error> for Error {
+    fn from(err: ctrlc::Error) -> Self {
+        Self::signal(format!("Signal handler error: {}", err))
+    }
+}
+
 impl From<figment::Error> for Error {
     fn from(err: figment::Error) -> Self {
         Self::config(format!("Configuration loading failed: {err}"))
