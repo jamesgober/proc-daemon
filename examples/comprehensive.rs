@@ -16,9 +16,21 @@ use tokio::time::sleep as async_sleep;
 #[cfg(all(feature = "async-std", not(feature = "tokio")))]
 use async_std::task::sleep as async_sleep;
 
+// Fallback when no async runtime is enabled: provide a no-op async sleep
+#[cfg(not(any(feature = "tokio", feature = "async-std")))]
+async fn async_sleep(_d: Duration) {}
+
 /// Example HTTP server subsystem
 struct HttpServer {
     port: u16,
+}
+
+// Fallback main when no runtime is enabled so this example still compiles
+#[cfg(not(any(feature = "tokio", feature = "async-std")))]
+fn main() {
+    eprintln!(
+        "This example requires a runtime feature. Enable either 'tokio' or 'async-std' features."
+    );
 }
 
 impl HttpServer {

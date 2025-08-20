@@ -66,3 +66,10 @@ async fn main() -> proc_daemon::Result<()> {
         .run()
         .await
 }
+
+#[cfg(not(any(feature = "tokio", feature = "async-std")))]
+fn main() {
+    eprintln!(
+        "This example requires a runtime feature. Enable either 'tokio' or 'async-std' features."
+    );
+}
