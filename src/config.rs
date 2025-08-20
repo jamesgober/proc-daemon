@@ -203,6 +203,10 @@ impl Config {
     /// 2. Configuration file (if exists)
     /// 3. Environment variables
     /// 4. Provided overrides
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the configuration file cannot be read or contains invalid configuration data.
     pub fn load() -> Result<Self> {
         Self::load_from_file(crate::DEFAULT_CONFIG_FILE)
     }
@@ -409,7 +413,7 @@ impl ConfigBuilder {
     ///
     /// # Errors
     /// 
-    /// Will return an error if the duration exceeds u64::MAX milliseconds
+    /// Will return an error if the duration exceeds `u64::MAX` milliseconds
     pub fn shutdown_timeout(mut self, timeout: Duration) -> Result<Self> {
         self.config.shutdown.graceful = u64::try_from(timeout.as_millis())
             .map_err(|_| Error::config("Shutdown timeout too large"))?;
@@ -420,7 +424,7 @@ impl ConfigBuilder {
     ///
     /// # Errors
     /// 
-    /// Will return an error if the duration exceeds u64::MAX milliseconds
+    /// Will return an error if the duration exceeds `u64::MAX` milliseconds
     pub fn force_shutdown_timeout(mut self, timeout: Duration) -> Result<Self> {
         self.config.shutdown.force = u64::try_from(timeout.as_millis())
             .map_err(|_| Error::config("Force shutdown timeout too large"))?;
@@ -431,7 +435,7 @@ impl ConfigBuilder {
     ///
     /// # Errors
     /// 
-    /// Will return an error if the duration exceeds u64::MAX milliseconds
+    /// Will return an error if the duration exceeds `u64::MAX` milliseconds
     pub fn kill_timeout(mut self, timeout: Duration) -> Result<Self> {
         self.config.shutdown.kill = u64::try_from(timeout.as_millis())
             .map_err(|_| Error::config("Kill timeout too large"))?;

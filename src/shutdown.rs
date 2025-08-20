@@ -413,15 +413,15 @@ pub struct ShutdownStats {
 impl ShutdownStats {
     /// Get the shutdown progress as a percentage (0.0 to 1.0).
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn progress(&self) -> f64 {
         // Calculate percentage of subsystems ready
-        let percentage = if self.total_subsystems == 0 {
+        if self.total_subsystems == 0 {
             100.0
         } else {
             // Use f64 to prevent loss of precision
             (self.ready_subsystems as f64 / self.total_subsystems as f64) * 100.0
-        };
-        percentage
+        }
     }
 
     /// Check if all subsystems are ready.

@@ -185,15 +185,15 @@ impl Daemon {
             {
                 return Err(Error::config("JSON logging requested but feature not enabled"));
             }
-        } else {
-            // Regular non-JSON logging
-            let regular_subscriber = base_subscriber
-                .with_ansi(self.config.is_colored_logging())
-                .compact();
-                
-            tracing::subscriber::set_global_default(regular_subscriber.finish())
-                .map_err(|e| Error::config(format!("Failed to initialize logging: {e}")))?;
         }
+        
+        // Regular non-JSON logging
+        let regular_subscriber = base_subscriber
+            .with_ansi(self.config.is_colored_logging())
+            .compact();
+            
+        tracing::subscriber::set_global_default(regular_subscriber.finish())
+            .map_err(|e| Error::config(format!("Failed to initialize logging: {e}")))?;
 
         debug!("Logging initialized with level: {:?}", self.config.logging.level);
         Ok(())
