@@ -537,6 +537,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_daemon_builder() {
         // Add a test timeout to prevent freezing
@@ -585,6 +586,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_daemon_with_defaults() {
         // Add a test timeout to prevent freezing
@@ -633,6 +635,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_daemon_shutdown() {
         // Add a test timeout to prevent freezing
@@ -746,6 +749,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_daemon_with_struct_subsystem() {
         // Add a test timeout to prevent freezing
@@ -796,6 +800,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_daemon_signal_configuration() {
         // Add a test timeout to prevent freezing
@@ -842,6 +847,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_macro_usage() {
         // Add a test timeout to prevent freezing

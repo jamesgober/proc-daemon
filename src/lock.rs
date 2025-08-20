@@ -111,6 +111,7 @@ mod tests {
     // std::fs removed as it's not used
     use tempfile::tempdir;
 
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn test_lock_acquisition() {
         // Create a temporary directory for the lock file
@@ -140,6 +141,7 @@ mod tests {
         assert!(lock2.is_locked());
     }
 
+    #[cfg_attr(miri, ignore)]
     #[test]
     fn test_lock_drop() {
         // Create a temporary directory for the lock file

@@ -922,6 +922,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_subsystem_registration() {
         // Add a test timeout to prevent the test from hanging
@@ -970,6 +971,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_subsystem_start_stop() {
         // Add a test timeout to prevent the test from hanging
@@ -1047,6 +1049,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_subsystem_failure() {
         // Add a test timeout to prevent the test from hanging
@@ -1102,6 +1105,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_closure_subsystem() {
         // Add a test timeout to prevent the test from hanging
@@ -1124,7 +1128,7 @@ mod tests {
                                     println!("Closure subsystem received shutdown signal");
                                     break;
                                 },
-                                _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+                                () = tokio::time::sleep(Duration::from_millis(10)) => {}
                             }
                         }
                     }

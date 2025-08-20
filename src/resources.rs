@@ -138,6 +138,7 @@ impl ResourceUsage {
 
     /// Returns the memory usage in megabytes
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn memory_mb(&self) -> f64 {
         // Simplify calculation for better accuracy
         self.memory_bytes as f64 / 1_048_576.0
@@ -354,6 +355,7 @@ impl ResourceTracker {
 
     /// Samples the resource usage for the given process ID
     #[allow(unused_variables, dead_code)]
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn sample_resource_usage(
         pid: u32,
         last_cpu_time: &mut f64,
@@ -680,6 +682,7 @@ mod tests {
     use std::time::Duration;
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_resource_tracker_creation() {
         let tracker = ResourceTracker::new(Duration::from_secs(1));
@@ -696,14 +699,15 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_resource_usage_methods() {
         let usage = ResourceUsage::new(1_048_576, 5.5, 4);
         assert_eq!(usage.memory_bytes(), 1_048_576);
         // Use a more reasonable epsilon for floating point comparisons
-        const EPSILON: f64 = 1e-6;
-        assert!((usage.memory_mb() - 1.0).abs() < EPSILON);
-        assert!((usage.cpu_percent() - 5.5).abs() < EPSILON);
+        let epsilon: f64 = 1e-6;
+        assert!((usage.memory_mb() - 1.0).abs() < epsilon);
+        assert!((usage.cpu_percent() - 5.5).abs() < epsilon);
         assert_eq!(usage.thread_count(), 4);
         assert!(usage.age() >= Duration::from_nanos(0));
     }
@@ -714,14 +718,15 @@ mod tests {
         let usage = ResourceUsage::new(1_048_576, 5.5, 4);
         assert_eq!(usage.memory_bytes(), 1_048_576);
         // Use a more reasonable epsilon for floating point comparisons
-        const EPSILON: f64 = 1e-6;
-        assert!((usage.memory_mb() - 1.0).abs() < EPSILON);
-        assert!((usage.cpu_percent() - 5.5).abs() < EPSILON);
+        let epsilon: f64 = 1e-6;
+        assert!((usage.memory_mb() - 1.0).abs() < epsilon);
+        assert!((usage.cpu_percent() - 5.5).abs() < epsilon);
         assert_eq!(usage.thread_count(), 4);
         assert!(usage.age() >= Duration::from_nanos(0));
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_tracker_with_max_history() {
         let tracker = ResourceTracker::new(Duration::from_secs(1)).with_max_history(100);

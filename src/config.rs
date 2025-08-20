@@ -220,7 +220,7 @@ impl Config {
         let path = path.as_ref();
 
         // Base figment configuration
-        let figment = Figment::from(Serialized::defaults(Config::default()))
+        let figment = Figment::from(Serialized::defaults(Self::default()))
             .merge(Env::prefixed("DAEMON_").split("_"));
 
         // Add config file if it exists

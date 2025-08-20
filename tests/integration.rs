@@ -12,6 +12,7 @@ use async_std::future::timeout;
 // Function removed to eliminate dead code warning
 
 #[cfg(feature = "tokio")]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn test_basic_daemon_creation() {
     let test_timeout = Duration::from_secs(2);
@@ -78,6 +79,7 @@ async fn test_basic_daemon_creation() {
 }
 
 #[cfg(feature = "tokio")]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn test_config_builder() {
     let config = Config::builder()
@@ -126,6 +128,7 @@ async fn test_config_builder() {
 }
 
 #[cfg(feature = "tokio")]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn test_daemon_stats() {
     let test_timeout = Duration::from_secs(2);
@@ -178,6 +181,7 @@ async fn test_daemon_stats() {
 }
 
 #[cfg(feature = "tokio")]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn test_multiple_subsystems() {
     let test_timeout = Duration::from_secs(2);
@@ -250,6 +254,7 @@ async fn test_multiple_subsystems() {
 }
 
 #[cfg(feature = "tokio")]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn test_daemon_with_defaults() {
     let test_timeout = Duration::from_secs(2);

@@ -656,6 +656,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_signal_handler_creation() {
         // Add a test timeout to prevent freezing

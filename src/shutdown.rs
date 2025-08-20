@@ -473,6 +473,7 @@ mod tests {
     use std::time::Duration;
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_shutdown_coordination() {
         // Add a test timeout to prevent freezing
@@ -508,8 +509,8 @@ mod tests {
             let stats = coordinator.get_stats();
             assert!(stats.is_complete());
             // Use a more reasonable epsilon for floating point comparisons
-            const EPSILON: f64 = 1e-6;
-            assert!((stats.progress() - 1.0).abs() < EPSILON);
+            let epsilon: f64 = 1e-6;
+            assert!((stats.progress() - 1.0).abs() < epsilon);
         })
         .await;
 
@@ -517,6 +518,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_shutdown_timeout() {
         // Add a test timeout to prevent the test itself from hanging
@@ -568,6 +570,7 @@ mod tests {
     }
 
     #[cfg(feature = "tokio")]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn test_multiple_shutdown_initiation() {
         // Add a test timeout to prevent freezing
@@ -624,20 +627,20 @@ mod tests {
         assert!(!stats.is_complete());
 
         // Use a more reasonable epsilon for floating point comparisons
-        const EPSILON: f64 = 1e-6;
-        assert!((stats.progress() - 0.0).abs() < EPSILON);
+        let epsilon: f64 = 1e-6;
+        assert!((stats.progress() - 0.0).abs() < epsilon);
 
         handle1.ready();
         let stats = coordinator.get_stats();
         assert_eq!(stats.ready_subsystems, 1);
 
-        assert!((stats.progress() - 0.5).abs() < EPSILON);
+        assert!((stats.progress() - 0.5).abs() < epsilon);
 
         handle2.ready();
         let stats = coordinator.get_stats();
         assert!(stats.is_complete());
 
-        assert!((stats.progress() - 1.0).abs() < EPSILON);
+        assert!((stats.progress() - 1.0).abs() < epsilon);
     }
 }
 
