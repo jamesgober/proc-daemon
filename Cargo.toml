@@ -116,7 +116,9 @@ windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_System_Threading",
     "Win32_System_ProcessStatus",
-    "Win32_System_SystemInformation"
+    "Win32_System_SystemInformation",
+    "Wdk_System_SystemInformation",
+    "Wdk_Foundation"
 ], optional = true }
 ctrlc = "3.4"
 

@@ -91,12 +91,11 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
-#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use windows::Win32::System::SystemInformation::{
-    NtQuerySystemInformation, SystemProcessInformation, SYSTEM_INFORMATION_CLASS,
-    SYSTEM_PROCESS_INFORMATION,
+use windows::Wdk::System::SystemInformation::{
+    NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS, SYSTEM_PROCESS_INFORMATION,
 };
+#[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use windows::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION};
 
@@ -600,7 +599,7 @@ impl ResourceTracker {
         let mut system_info = unsafe { std::mem::zeroed::<SYSTEM_PROCESS_INFORMATION>() };
         let status = unsafe {
             NtQuerySystemInformation(
-                SystemProcessInformation, // Use the named constant
+                SYSTEM_INFORMATION_CLASS::SystemProcessInformation,
                 &mut system_info as *mut _ as *mut _,
                 size_of::<SYSTEM_PROCESS_INFORMATION>() as u32,
                 std::ptr::null_mut(),
