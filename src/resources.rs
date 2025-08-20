@@ -100,7 +100,6 @@ use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY
 use windows::Win32::System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_INFORMATION};
 
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-use std::mem::size_of;
 #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
 use windows::Win32::Foundation::{CloseHandle, FILETIME};
 
@@ -444,7 +443,7 @@ impl ResourceTracker {
 
         let reader = BufReader::new(file);
         let mut cpu_percent = 0.0;
-        let mut thread_count = 0;
+        let mut thread_count: u32 = 0;
 
         if let Ok(line) = reader.lines().next().ok_or_else(|| {
             Error::runtime("Failed to read CPU stats from proc filesystem".to_string())
@@ -605,7 +604,7 @@ impl ResourceTracker {
                 if Thread32First(snapshot, &mut entry).as_bool() {
                     loop {
                         if entry.th32OwnerProcessID == pid {
-                            thread_count = thread_count.saturating_add(1);
+                            thread_count += 1;
                         }
                         if !Thread32Next(snapshot, &mut entry).as_bool() {
                             break;
