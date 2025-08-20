@@ -139,7 +139,6 @@ impl BacktraceError {
     }
 
     /// Get the backtrace
-    #[must_use]
     pub const fn backtrace(&self) -> &Backtrace {
         &self.backtrace
     }
@@ -442,58 +441,20 @@ impl Error {
     #[cfg(feature = "backtrace")]
     /// Get a backtrace for the error if available
     #[must_use]
-    pub fn backtrace(&self) -> Option<&std::backtrace::Backtrace> {
+    pub fn backtrace(&self) -> Option<&Backtrace> {
         match self {
-            Self::Config {
-                source: Some(err), ..
-            } => err
+            Self::Config { source: Some(err), .. } |
+            Self::Subsystem { source: Some(err), .. } |
+            Self::Io { source: Some(err), .. } |
+            Self::Runtime { source: Some(err), .. } |
+            Self::ResourceExhausted { source: Some(err), .. } |
+            Self::Timeout { source: Some(err), .. } |
+            Self::InvalidState { source: Some(err), .. } |
+            Self::Platform { source: Some(err), .. } |
+            Self::Signal { source: Some(err), .. } |
+            Self::Shutdown { source: Some(err), .. } => err
                 .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::Signal {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::Shutdown {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::Subsystem {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::Io {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::Runtime {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::ResourceExhausted {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::Timeout {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::InvalidState {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
-            Self::Platform {
-                source: Some(err), ..
-            } => err
-                .downcast_ref::<BacktraceError>()
-                .map(|e| e.backtrace()),
+                .map(BacktraceError::backtrace),
             _ => None,
         }
     }

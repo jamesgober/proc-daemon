@@ -230,7 +230,7 @@ mod tests {
         let collector = MetricsCollector::new();
 
         {
-            let _timer = Timer::new(collector.clone(), "test_timer".to_string());
+            let _timer = Timer::new(collector.clone(), "test_timer");
             std::thread::sleep(Duration::from_millis(10));
         }
 

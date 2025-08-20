@@ -44,9 +44,9 @@ async fn test_config_builder() {
         .name("builder-test")
         .log_level(LogLevel::Debug)
         .json_logging(true)
-        .shutdown_timeout(Duration::from_secs(60))
-        .force_shutdown_timeout(Duration::from_secs(120))
-        .kill_timeout(Duration::from_secs(180))
+        .shutdown_timeout(Duration::from_secs(60)).unwrap()
+        .force_shutdown_timeout(Duration::from_secs(10)).unwrap()
+        .kill_timeout(Duration::from_secs(180)).unwrap()
         .worker_threads(8)
         .build()
         .unwrap();
@@ -54,7 +54,7 @@ async fn test_config_builder() {
     assert_eq!(config.name, "builder-test");
     assert_eq!(config.logging.level, LogLevel::Debug);
     assert!(config.logging.json);
-    assert_eq!(config.shutdown.timeout_ms, 60000);
+    assert_eq!(config.shutdown.graceful, 60000);
     assert_eq!(config.performance.worker_threads, 8);
 }
 

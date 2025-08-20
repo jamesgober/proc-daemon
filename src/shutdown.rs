@@ -496,7 +496,7 @@ mod tests {
             // All should be ready now
             let stats = coordinator.get_stats();
             assert!(stats.is_complete());
-            assert_eq!(stats.progress(), 1.0);
+            assert!((stats.progress() - 1.0).abs() < f64::EPSILON);
         })
         .await;
 
@@ -563,16 +563,19 @@ mod tests {
         assert_eq!(stats.total_subsystems, 2);
         assert_eq!(stats.ready_subsystems, 0);
         assert!(!stats.is_complete());
-        assert_eq!(stats.progress(), 0.0);
+        
+        assert!((stats.progress() - 0.0).abs() < f64::EPSILON);
 
         handle1.ready();
         let stats = coordinator.get_stats();
         assert_eq!(stats.ready_subsystems, 1);
-        assert_eq!(stats.progress(), 0.5);
+        
+        assert!((stats.progress() - 0.5).abs() < f64::EPSILON);
 
         handle2.ready();
         let stats = coordinator.get_stats();
         assert!(stats.is_complete());
-        assert_eq!(stats.progress(), 1.0);
+        
+        assert!((stats.progress() - 1.0).abs() < f64::EPSILON);
     }
 }

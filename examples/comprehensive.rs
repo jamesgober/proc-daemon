@@ -213,7 +213,7 @@ async fn main() -> proc_daemon::Result<()> {
         .name("example-daemon")
         .log_level(LogLevel::Info)
         .json_logging(false) // Use structured text logs for this example
-        .shutdown_timeout(Duration::from_secs(30))
+        .shutdown_timeout(Duration::from_secs(30)).unwrap()
         .worker_threads(4)
         .enable_metrics(true)
         .build()?;

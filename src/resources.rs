@@ -565,8 +565,8 @@ mod tests {
     async fn test_resource_usage_methods() {
         let usage = ResourceUsage::new(1_048_576, 5.5, 4);
         assert_eq!(usage.memory_bytes(), 1_048_576);
-        assert_eq!(usage.memory_mb(), 1.0);
-        assert_eq!(usage.cpu_percent(), 5.5);
+        assert!((usage.memory_mb() - 1.0).abs() < f64::EPSILON);
+        assert!((usage.cpu_percent() - 5.5).abs() < f64::EPSILON);
         assert_eq!(usage.thread_count(), 4);
         assert!(usage.age() >= Duration::from_nanos(0));
     }
