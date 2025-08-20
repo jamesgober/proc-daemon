@@ -427,6 +427,11 @@ impl ResourceTracker {
     }
 
     #[cfg(target_os = "linux")]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::similar_names
+    )]
     fn get_cpu_linux(
         pid: u32,
         last_cpu_time: &mut f64,
@@ -457,10 +462,10 @@ impl ResourceTracker {
                 // Parse CPU times (fields 14-17: utime, stime, cutime, cstime)
                 let utime = parts[13].parse::<f64>().unwrap_or(0.0);
                 let stime = parts[14].parse::<f64>().unwrap_or(0.0);
-                let child_utime = parts[15].parse::<f64>().unwrap_or(0.0);
-                let child_stime = parts[16].parse::<f64>().unwrap_or(0.0);
+                let child_user_time = parts[15].parse::<f64>().unwrap_or(0.0);
+                let child_system_time = parts[16].parse::<f64>().unwrap_or(0.0);
 
-                let current_cpu_time = utime + stime + child_utime + child_stime;
+                let current_cpu_time = utime + stime + child_user_time + child_system_time;
                 let now = Instant::now();
 
                 // Calculate CPU usage percentage
@@ -468,7 +473,7 @@ impl ResourceTracker {
                     let time_diff = now.duration_since(*last_timestamp).as_secs_f64();
                     if time_diff > 0.0 {
                         // CPU usage is normalized by the number of cores
-                        let num_cores = f64::from(num_cpus::get() as u32);
+                        let num_cores = num_cpus::get() as f64;
                         let cpu_time_diff = current_cpu_time - *last_cpu_time;
 
                         // Convert jiffies to percentage
@@ -574,7 +579,7 @@ impl ResourceTracker {
     }
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code, clippy::cast_precision_loss)]
     fn get_cpu_windows(
         pid: u32,
         last_cpu_time: &mut f64,
