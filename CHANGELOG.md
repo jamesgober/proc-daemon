@@ -17,7 +17,26 @@
 
 ### Fixed
 
+
 ### Changed
+
+
+
+## [0.6.0] - 2025-08-21
+
+### Fixed
+
+- Resolved Clippy warnings:
+  - `duplicated_attributes`: removed crate-level cfg in `src/ipc.rs` (already gated in `src/lib.rs`).
+  - `missing_errors_doc`: added `# Errors` sections to `unix::bind()` and `unix::connect()` in `src/ipc.rs`.
+  - `format_push_string`, `write_with_newline`: switched to `write!/writeln!` in `src/metrics.rs` to avoid extra allocations and newline lint.
+  - `redundant_closure_for_method_calls`: used `std::time::Duration::as_secs_f64` method reference in `src/metrics.rs`.
+  - `uninlined_format_args`: inlined format args for `{k}_count` and `{k}_sum` in `src/metrics.rs`.
+
+### Changed
+
+- Refactored Prometheus rendering in `src/metrics.rs` for lower allocations and clearer formatting.
+- Ran `cargo fmt` to standardize formatting across the codebase.
 
 
 
@@ -118,8 +137,8 @@ Initial pre-dev release for backup.
 - `README` file.
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.5.0...HEAD
-[0.6.0]: https://github.com/jamesgober/proc-daemon/compare/v0.4.0...v0.6.0
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/jamesgober/proc-daemon/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jamesgober/proc-daemon/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/jamesgober/proc-forge/releases/tag/v0.1.0
