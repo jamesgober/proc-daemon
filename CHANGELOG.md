@@ -1,8 +1,5 @@
 <h1 align="center">
-    <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/jamesgober-logo-dark.png">
-        <img width="72" height="72" alt="James Gober - brand logo. Image displays stylish 'JG' initials encased in a hexagon outline." src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/jamesgober-logo.png">
-    </picture>
+    <img width="72xpx" src="./media/proc-rs-orange.svg" alt="High-Performance Process EcoSystem for Rust">
     <br>
     <b>CHANGELOG</b>
 </h1>

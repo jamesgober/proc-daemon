@@ -1,8 +1,8 @@
 <div align="center">
-    <img width="120px" height="auto" src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/icons/hexagon-3.svg" alt="Triple Hexagon">
+    <img width="72xpx" src="./media/proc-rs-orange.svg" alt="High-Performance Process EcoSystem for Rust">
     <h1>
         <strong>Process Daemon</strong>
-        <sup><br><sub>RUST DAEMON FRAMEWORK</sub><br></sup>
+        <sup><br><sub>RUST DAEMON FRAMEWORK</sub></sup>
     </h1>
         <a href="https://crates.io/crates/proc-daemon" alt="Error-Protocol on Crates.io"><img alt="Crates.io" src="https://img.shields.io/crates/v/proc-daemon"></a>
         <span>&nbsp;</span>
@@ -18,7 +18,6 @@
 <p>
     A foundational framework for building high-performance, resilient daemon services in Rust. Designed for enterprise applications requiring nanosecond-level performance, bulletproof reliability, and extreme concurrency.
 </p>
-
 
 ## Features
 
@@ -42,16 +41,9 @@
 - **Health Monitoring**: Comprehensive subsystem health checks and diagnostics
 - **Production Tested**: Battle-tested patterns from high-scale deployments
 
-
-<hr>
-<div align="center">
-<img width="72px" src="./media/rust.svg" alt="Rust Logo">
-</div>
 <br>
-
-
-
-
+<hr>
+<br>
 
 ## Installation
 
@@ -383,40 +375,47 @@ cargo test --test integration
 cargo bench
 ```
 
-## 📊 Performance
+<hr>
+<br>
 
+## PERFORMANCE
 proc-daemon is designed for extreme performance:
 
-### Benchmarks
 
+### Running Benchmarks
 ```bash
 cargo bench
 ```
 
-Typical performance characteristics:
+### Typical performance:
 - **Daemon Creation**: ~1-5μs
 - **Subsystem Registration**: ~500ns per subsystem
 - **Shutdown Coordination**: ~10-50μs for 100 subsystems
 - **Signal Handling**: ~100ns latency
 - **Metrics Collection**: ~10ns per operation
 
-### Memory Usage
 
+### Memory Usage
 - **Base daemon**: ~1-2MB
 - **Per subsystem**: ~4-8KB
 - **Configuration**: ~1-4KB
 - **Signal handling**: ~512B
+ 
+</br>
+</br>
+
+**🔗 See [`PERFORMANCE.md`](./PERFORMANCE.md) for up-to-date benchmarks, metrics, and version-over-version improvements.**
+
+
+<br>
+<hr>
+<br>
 
 ## Security
-
 - **Memory Safety**: 100% safe Rust with no unsafe code
 - **Signal Safety**: Async signal handling prevents race conditions  
 - **Resource Limits**: Configurable limits prevent resource exhaustion
 - **Graceful Degradation**: Continues operating even when subsystems fail
-
-## ontributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ### Development Setup
 
@@ -427,44 +426,100 @@ cargo build --all-features
 cargo test --all-features
 ```
 
+
+<!-- API REFERENCE
+############################################# -->
 <hr>
 <br>
+<h3>Documentation:</h3>
+<ul>
+    <li><a href="./docs//API.md"><b>API Reference</b></a> Complete documentation and examples.</li>
+    <li><a href="./docs//PRINCIPLES.md"><b>Code Principles</b></a> guidelines for contribution &amp; development.</li>
+</ul>
+
+<br>
+<hr>
 
 
-
-<!-- ACKNOWLEDGMENTS
+<!-- API REFERENCE
 ############################################# -->
 
-## Acknowledgments
+### Acknowledgments
 - Inspired by production daemon patterns from high-scale deployments
 - Built on the excellent Rust async ecosystem (Tokio, async-std)
 - Configuration management powered by [Figment](https://github.com/SergioBenitez/Figment)
 - Logging via the [tracing](https://github.com/tokio-rs/tracing) ecosystem
 
+<hr>
+<br>
+<br>
 
-<br><hr>
+<h2 align="center">
+    DEVELOPMENT &amp; CONTRIBUTION
+</h2>
+
+
+<p>
+    See <a href="./docs//API.md"><b>API</b></a> for more information.
+
+<br>
+
+ 
+## 
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 <div align="center">
-    <b>Built with ❤️ in Rust for production workloads.</b>
+    <a href="#contributing"><b>CONTRIBUTING</b></a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/PRINCIPLES.md"><b>PRINCIPLES</b></a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/API.md"><b>API</b></a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/PERFORMANCE.md">PERFORMANCE</a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/README.md">README</a>
 </div>
+
+<br>
+
+<div align="center">
+    <h2>
+        <img width="72px" src="./media/rust.svg" alt="Rust Logo">
+        <sub><br><sup><b>Built with ❤️ Rust.</b></sup></sub>
+    </h2>
+    <a href="#contributing"><b>CONTRIBUTING</b></a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/PRINCIPLES.md"><b>PRINCIPLES</b></a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/API.md"><b>API</b></a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/PERFORMANCE.md">PERFORMANCE</a>
+    <span>&nbsp;|&nbsp;</span>
+    <a href="./docs/README.md"><b>README</b></a>
+</div>
+
+<br>
+<br>
+<br>
+<br>
 
 
 <!-- LICENSE
 ############################################# -->
 <div id="license">
-    <br>
     <h2>⚖️ License</h2>
     <p>Licensed under the <b>Apache License</b>, version 2.0 (the <b>"License"</b>); you may not use this software, including, but not limited to the source code, media files, ideas, techniques, or any other associated property or concept belonging to, associated with, or otherwise packaged with this software except in compliance with the <b>License</b>.</p>
     <p>You may obtain a copy of the <b>License</b> at: <a href="http://www.apache.org/licenses/LICENSE-2.0" title="Apache-2.0 License" target="_blank">http://www.apache.org/licenses/LICENSE-2.0</a>.</p>
     <p>Unless required by applicable law or agreed to in writing, software distributed under the <b>License</b> is distributed on an "<b>AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND</b>, either express or implied.</p>
     <p>See the <a href="./LICENSE" title="Software License file">LICENSE</a> file included with this project for the specific language governing permissions and limitations under the <b>License</b>.</p>
-    <br>
 </div>
 
+<br>
 
 <!-- COPYRIGHT
 ############################################# -->
 <div align="center">
-  <br>
   <h2></h2>
   <sup>COPYRIGHT <small>&copy;</small> 2025 <strong>JAMES GOBER.</strong></sup>
 </div>
