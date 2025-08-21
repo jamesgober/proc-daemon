@@ -452,55 +452,23 @@ cargo test --all-features
 
 <hr>
 <br>
-<br>
 
 <h2 align="center">
-    DEVELOPMENT &amp; CONTRIBUTION
+    CONTRIBUTION
 </h2>
-
-
-<p>
-    See <a href="./docs//API.md"><b>API</b></a> for more information.
-
-<br>
-
- 
-## 
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-<div align="center">
-    <a href="#contributing"><b>CONTRIBUTING</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PRINCIPLES.md"><b>PRINCIPLES</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/API.md"><b>API</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PERFORMANCE.md">PERFORMANCE</a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/README.md">README</a>
-</div>
-
+<hr>
+<br>
 <br>
 
 <div align="center">
-    <h2>
-        <img width="72px" src="./media/rust.svg" alt="Rust Logo">
-        <sub><br><sup><b>Built with ❤️ Rust.</b></sup></sub>
-    </h2>
-    <a href="#contributing"><b>CONTRIBUTING</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PRINCIPLES.md"><b>PRINCIPLES</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/API.md"><b>API</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PERFORMANCE.md">PERFORMANCE</a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/README.md"><b>README</b></a>
+    <img width="72px" src="./media/rust.svg" alt="Rust Logo">
+    <br>
+    <b>Built with ❤️ Rust.</b>
 </div>
 
-<br>
-<br>
 <br>
 <br>
 
