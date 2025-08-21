@@ -433,8 +433,8 @@ cargo test --all-features
 <br>
 <h3>Documentation:</h3>
 <ul>
-    <li><a href="./docs//API.md"><b>API Reference</b></a> Complete documentation and examples.</li>
-    <li><a href="./docs//PRINCIPLES.md"><b>Code Principles</b></a> guidelines for contribution &amp; development.</li>
+    <li><a href="./docs/API.md"><b>API Reference</b></a> Complete documentation and examples.</li>
+    <li><a href="./docs/PRINCIPLES.md"><b>Code Principles</b></a> guidelines for contribution &amp; development.</li>
 </ul>
 
 <br>
@@ -458,28 +458,7 @@ cargo test --all-features
     DEVELOPMENT &amp; CONTRIBUTION
 </h2>
 
-
-<p>
-    See <a href="./docs//API.md"><b>API</b></a> for more information.
-
-<br>
-
- 
-## 
-
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-<div align="center">
-    <a href="#contributing"><b>CONTRIBUTING</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PRINCIPLES.md"><b>PRINCIPLES</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/API.md"><b>API</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PERFORMANCE.md">PERFORMANCE</a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/README.md">README</a>
-</div>
 
 <br>
 
@@ -488,19 +467,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
         <img width="72px" src="./media/rust.svg" alt="Rust Logo">
         <sub><br><sup><b>Built with ❤️ Rust.</b></sup></sub>
     </h2>
-    <a href="#contributing"><b>CONTRIBUTING</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PRINCIPLES.md"><b>PRINCIPLES</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/API.md"><b>API</b></a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/PERFORMANCE.md">PERFORMANCE</a>
-    <span>&nbsp;|&nbsp;</span>
-    <a href="./docs/README.md"><b>README</b></a>
 </div>
 
-<br>
-<br>
 <br>
 <br>
 
