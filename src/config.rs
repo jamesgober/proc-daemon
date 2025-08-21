@@ -4,7 +4,7 @@
 //! from multiple sources with clear precedence rules. Built on top of figment
 //! for maximum flexibility and performance.
 
-#[cfg(feature = "toml")]
+#[cfg(any(feature = "toml", feature = "serde_json"))]
 use figment::providers::Format;
 use figment::providers::{Env, Serialized};
 use figment::{Figment, Provider};
