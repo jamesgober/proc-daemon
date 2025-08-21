@@ -6,13 +6,42 @@
     <br>
     <b>CHANGELOG</b>
 </h1>
-
-All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+<p>
+  All notable changes to this project will be documented in this file. The format is based on <a href="https://keepachangelog.com/en/1.0.0/">Keep a Changelog</a>,
+  and this project adheres to <a href="https://semver.org/spec/v2.0.0.html/">Semantic Versioning</a>.
+</p>
 
 ## [Unreleased]
 
 ### Added
+
+### Fixed
+
+### Changed
+
+
+
+
+## [0.5.0] - 2025-08-20
+### Added
+- Windows process monitoring support using Win32 ToolHelp thread enumeration (no WDK dependency required)
+
+### Fixed
+- Resolved Windows build errors by enabling required `windows` crate features: `Win32_System_Diagnostics(_ToolHelp)`, `Win32_System_Threading`, `Win32_System_ProcessStatus`, `Win32_Foundation`
+- Eliminated clippy pedantic warnings in `src/resources.rs`:
+  - similar name bindings (renamed child CPU time vars)
+  - potential truncation/precision cast warnings (scoped allows and safer conversions)
+- Removed unused `ErrorCode` import in `src/signal.rs` and qualified enum usage to avoid platform-gated unused import
+- Fixed benchmark config panic by ensuring `force_shutdown_timeout > shutdown_timeout`
+- Deduplicated and reordered imports to satisfy rustfmt across platforms
+
+### Changed
+- Replaced WDK `NtQuerySystemInformation` usage with Win32 ToolHelp APIs for thread counting on Windows
+- Tightened runtime gating in `src/signal.rs` for no-runtime builds (clear `MissingRuntime` error)
+
+
+
+## [0.4.0] - 2025-08-20
 
 ### Fixed
 - Fixed `trivially_copy_pass_by_ref` warnings in `error.rs` by modifying `ErrorCode::as_str` to take `self` by value
@@ -27,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Potential precision loss in numeric casts (u128 to u64, usize/u64 to f32/f64)
   - Structure with excessive boolean fields in `SignalConfig`
   - Unused `async` function that contains no `await` statements
+
+
+
 
 ## [0.3.0] - 2025-08-20
 ### Added
@@ -86,7 +118,8 @@ Initial pre-dev release for backup.
 - `README` file.
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...HEAD
-[0.6.0]: https://github.com/jamesgober/proc-daemon/compare/v0.3.0...v0.6.0
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.5.0...HEAD
+[0.6.0]: https://github.com/jamesgober/proc-daemon/compare/v0.4.0...v0.6.0
+[0.5.0]: https://github.com/jamesgober/proc-daemon/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/jamesgober/proc-forge/releases/tag/v0.1.0

@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "proc-daemon"
-version = "0.3.0"
+version = "0.5.0"
 dependencies = [
  "arc-swap",
  "async-std",

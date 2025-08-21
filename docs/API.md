@@ -20,7 +20,7 @@
 ### Install Manually
 ```toml
 [dependencies]
-proc-daemon = "0.1.0"
+proc-daemon = "0.5.0"
 ```
 
 ### Install Using Cargo

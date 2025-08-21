@@ -48,10 +48,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "0.3.0"
+proc-daemon = "0.5.0"
 
 # Optional features
-proc-daemon = { version = "0.3.0", features = ["full"] }
+proc-daemon = { version = "0.5.0", features = ["full"] }
 ```
 
 ### Feature Flags
