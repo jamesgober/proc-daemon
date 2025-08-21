@@ -82,7 +82,7 @@ impl Daemon {
         });
 
         #[cfg(not(any(feature = "tokio", feature = "async-std")))]
-        let signal_task: Option<()> = None;
+        let _signal_task: Option<()> = None;
 
         // Wait for shutdown to be initiated
         info!("Daemon started successfully, waiting for shutdown signal");
@@ -489,7 +489,9 @@ macro_rules! subsystem {
 #[macro_export]
 macro_rules! task {
     ($name:expr, $body:expr) => {
-        |mut shutdown: $crate::shutdown::ShutdownHandle| async move {
+        |shutdown: $crate::shutdown::ShutdownHandle| async move {
+            #[cfg(feature = "tokio")]
+            let mut shutdown = shutdown;
             loop {
                 #[cfg(feature = "tokio")]
                 {
@@ -525,7 +527,9 @@ mod tests {
     use std::pin::Pin;
     use std::time::Duration;
 
-    async fn test_subsystem(mut shutdown: crate::shutdown::ShutdownHandle) -> Result<()> {
+    async fn test_subsystem(shutdown: crate::shutdown::ShutdownHandle) -> Result<()> {
+        #[cfg(feature = "tokio")]
+        let mut shutdown = shutdown;
         loop {
             #[cfg(feature = "tokio")]
             {
@@ -729,9 +733,11 @@ mod tests {
     impl Subsystem for TestSubsystemStruct {
         fn run(
             &self,
-            mut shutdown: crate::shutdown::ShutdownHandle,
+            shutdown: crate::shutdown::ShutdownHandle,
         ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
             Box::pin(async move {
+                #[cfg(feature = "tokio")]
+                let mut shutdown = shutdown;
                 loop {
                     #[cfg(feature = "tokio")]
                     {

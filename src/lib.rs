@@ -126,6 +126,9 @@ pub use subsystem::{RestartPolicy, Subsystem, SubsystemId};
 #[cfg(feature = "metrics")]
 pub mod metrics;
 
+#[cfg(feature = "ipc")]
+pub mod ipc;
+
 /// Version of the proc-daemon library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
