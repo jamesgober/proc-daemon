@@ -42,16 +42,27 @@
 - **Health Monitoring**: Comprehensive subsystem health checks and diagnostics
 - **Production Tested**: Battle-tested patterns from high-scale deployments
 
+
+<hr>
+<div align="center">
+<img width="72px" src="./media/rust.svg" alt="Rust Logo">
+</div>
+<br>
+
+
+
+
+
 ## Installation
 
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "0.5.0"
+proc-daemon = "0.6.0"
 
 # Optional features
-proc-daemon = { version = "0.5.0", features = ["full"] }
+proc-daemon = { version = "0.6.0", features = ["full"] }
 ```
 
 ### Feature Flags
@@ -448,7 +459,6 @@ cargo test --all-features
     <p>See the <a href="./LICENSE" title="Software License file">LICENSE</a> file included with this project for the specific language governing permissions and limitations under the <b>License</b>.</p>
     <br>
 </div>
-
 
 
 <!-- COPYRIGHT
