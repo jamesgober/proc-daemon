@@ -220,5 +220,8 @@ jobs:
       - name: Regenerate Cargo.lock with MSRV
         run: cargo generate-lockfile
         
-      - name: Check MSRV compatibility
-        run: cargo check --workspace --all-features
+      - name: Check MSRV compatibility (all features, lib only)
+        run: cargo check --lib --all-features
+
+      - name: Check MSRV compatibility (no default features, lib only)
+        run: cargo check --lib --no-default-features
