@@ -17,15 +17,7 @@ keywords = [
     "cross-platform",
     "systemd",
     "process",
-    "background",
-    "service",
-    "framework", 
-    "tokio", 
-    "async", 
-    "shutdown", 
-    "resilience",
-    "performance",
-    "zero-copy"
+    "service"
 ]
 
 categories = [
@@ -33,8 +25,7 @@ categories = [
     "os::windows-apis", 
     "development-tools",
     "network-programming",
-    "concurrency",
-    "asynchronous"
+    "concurrency"
 ]
 
 documentation = "https://docs.rs/proc-daemon"
