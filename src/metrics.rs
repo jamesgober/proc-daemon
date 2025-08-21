@@ -6,6 +6,7 @@
 use crate::pool::StringPool;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,6 +19,70 @@ pub struct MetricsCollector {
     inner: Arc<MetricsInner>,
     /// String pool for metric names to avoid allocations on hot paths
     string_pool: Arc<StringPool>,
+}
+
+impl MetricsSnapshot {
+    /// Render metrics in Prometheus exposition format (text/plain; version=0.0.4)
+    #[must_use]
+    pub fn render_prometheus(&self) -> String {
+        let mut out = String::with_capacity(1024);
+        // Uptime
+        out.push_str("# HELP proc_uptime_seconds Daemon uptime in seconds\n");
+        out.push_str("# TYPE proc_uptime_seconds gauge\n");
+        let _ = writeln!(out, "proc_uptime_seconds {}", self.uptime.as_secs_f64());
+
+        // Gauges
+        for (k, v) in &self.gauges {
+            out.push('#');
+            out.push_str(" TYPE ");
+            out.push_str(k);
+            out.push_str(" gauge\n");
+            out.push_str(k);
+            out.push(' ');
+            out.push_str(&v.to_string());
+            out.push('\n');
+        }
+
+        // Counters
+        for (k, v) in &self.counters {
+            out.push('#');
+            out.push_str(" TYPE ");
+            out.push_str(k);
+            out.push_str(" counter\n");
+            out.push_str(k);
+            out.push(' ');
+            out.push_str(&v.to_string());
+            out.push('\n');
+        }
+
+        // Histograms (expose count and sum of seconds)
+        for (k, durations) in &self.histograms {
+            let count = durations.len() as u64;
+            let sum: f64 = durations.iter().map(std::time::Duration::as_secs_f64).sum();
+            let count_name = format!("{k}_count");
+            let sum_name = format!("{k}_sum");
+
+            out.push('#');
+            out.push_str(" TYPE ");
+            out.push_str(&count_name);
+            out.push_str(" counter\n");
+            out.push_str(&count_name);
+            out.push(' ');
+            out.push_str(&count.to_string());
+            out.push('\n');
+
+            out.push('#');
+            out.push_str(" TYPE ");
+            out.push_str(&sum_name);
+            out.push_str(" counter\n");
+            out.push_str(&sum_name);
+            out.push(' ');
+            out.push_str(&sum.to_string());
+            out.push('\n');
+        }
+
+        out
+    }
 }
 
 #[derive(Debug)]

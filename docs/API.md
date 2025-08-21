@@ -1,6 +1,6 @@
 
 <div align="center">
-   <img width="120px" height="auto" src="https://raw.githubusercontent.com/jamesgober/jamesgober/main/media/icons/hexagon-3.svg" alt="Triple Hexagon">
+    <img width="108xpx" src="../media/proc-rs-orange.svg" alt="High-Performance Process EcoSystem for Rust">
     <h1>
         <strong>Process Daemon</strong>
         <sup><br><sub>API REFERENCE</sub><br></sup>
