@@ -4,7 +4,9 @@
 //! from multiple sources with clear precedence rules. Built on top of figment
 //! for maximum flexibility and performance.
 
-use figment::providers::{Env, Format, Serialized};
+#[cfg(feature = "toml")]
+use figment::providers::Format;
+use figment::providers::{Env, Serialized};
 use figment::{Figment, Provider};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

@@ -14,6 +14,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+#[allow(unused_imports)]
 use tracing::{error, info, instrument, warn};
 
 /// Unique identifier for a subsystem.
@@ -336,14 +337,14 @@ impl SubsystemManager {
 
         self.update_state(id, SubsystemState::Starting);
 
-        // Clone variables needed for the task
-        let subsystem = Arc::clone(&entry.subsystem);
-        let shutdown_handle = entry.shutdown_handle.clone();
         // Get the subsystem name directly
         let subsystem_name = entry.subsystem.name().to_string();
 
         #[cfg(feature = "tokio")]
         {
+            // Clone variables needed only when using tokio runtime
+            let subsystem = Arc::clone(&entry.subsystem);
+            let shutdown_handle = entry.shutdown_handle.clone();
             let entry_clone = Arc::clone(&entry);
             let id_clone = id;
             // No need to clone the string pool here, remove this code
@@ -431,6 +432,7 @@ impl SubsystemManager {
         };
 
         // Get subsystem name for logging
+        #[allow(unused_variables)]
         let subsystem_name = self.string_pool.get_with_value(entry.subsystem.name());
         self.update_state(id, SubsystemState::Stopping);
 
@@ -898,20 +900,22 @@ mod tests {
     impl Subsystem for TestSubsystem {
         fn run(
             &self,
-            mut shutdown: ShutdownHandle,
+            shutdown: ShutdownHandle,
         ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
             let should_fail = self.should_fail;
             Box::pin(async move {
-                if should_fail {
-                    return Err(Error::runtime("Test failure"));
-                }
-
+                let _start_time = Instant::now();
+                #[cfg(feature = "tokio")]
+                let mut shutdown = shutdown;
                 loop {
                     #[cfg(feature = "tokio")]
                     {
                         tokio::select! {
-                            () = shutdown.cancelled() => break,
-                            () = tokio::time::sleep(Duration::from_millis(100)) => {}
+                            () = shutdown.cancelled() => {
+                                info!("Subsystem '{}' shutting down", "TestSubsystem");
+                                break;
+                            }
+                            () = tokio::time::sleep(Duration::from_millis(10)) => {}
                         }
                     }
 
@@ -920,7 +924,11 @@ mod tests {
                         if shutdown.is_shutdown() {
                             break;
                         }
-                        async_std::task::sleep(Duration::from_millis(100)).await;
+                        async_std::task::sleep(Duration::from_millis(10)).await;
+                    }
+
+                    if should_fail {
+                        return Err(Error::runtime("Test failure"));
                     }
                 }
 
@@ -1128,10 +1136,12 @@ mod tests {
 
             // Create a closure-based subsystem with faster response to shutdown
             let name = "closure_test".to_string();
-            let closure_subsystem = Box::new(move |mut shutdown: ShutdownHandle| {
+            let closure_subsystem = Box::new(move |shutdown: ShutdownHandle| {
                 // Using name in scope to move it into the closure
                 let _ = name.clone();
                 Box::pin(async move {
+                    #[cfg(feature = "tokio")]
+                    let mut shutdown = shutdown;
                     loop {
                         #[cfg(feature = "tokio")]
                         {
@@ -1139,9 +1149,17 @@ mod tests {
                                 () = shutdown.cancelled() => {
                                     println!("Closure subsystem received shutdown signal");
                                     break;
-                                },
+                                }
                                 () = tokio::time::sleep(Duration::from_millis(10)) => {}
                             }
+                        }
+
+                        #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+                        {
+                            if shutdown.is_shutdown() {
+                                break;
+                            }
+                            async_std::task::sleep(Duration::from_millis(10)).await;
                         }
                     }
                     Ok(())

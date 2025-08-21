@@ -42,7 +42,7 @@ impl HttpServer {
 impl Subsystem for HttpServer {
     fn run(
         &self,
-        mut shutdown: ShutdownHandle,
+        shutdown: ShutdownHandle,
     ) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
         let port = self.port;
         Box::pin(async move {
@@ -56,6 +56,7 @@ impl Subsystem for HttpServer {
 
             #[cfg(feature = "tokio")]
             {
+                let mut shutdown = shutdown;
                 loop {
                     tokio::select! {
                         _ = shutdown.cancelled() => {
@@ -140,7 +141,7 @@ impl DatabasePool {
 impl Subsystem for DatabasePool {
     fn run(
         &self,
-        mut shutdown: ShutdownHandle,
+        shutdown: ShutdownHandle,
     ) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
         let max_connections = self.max_connections;
         Box::pin(async move {
@@ -156,6 +157,7 @@ impl Subsystem for DatabasePool {
 
             #[cfg(feature = "tokio")]
             {
+                let mut shutdown = shutdown;
                 loop {
                     tokio::select! {
                         _ = shutdown.cancelled() => {
@@ -231,13 +233,14 @@ impl Subsystem for DatabasePool {
 }
 
 /// Example background task processor
-async fn background_processor(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
+async fn background_processor(shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
     info!("Starting background task processor");
 
     let mut tasks_processed = 0u64;
 
     #[cfg(feature = "tokio")]
     {
+        let mut shutdown = shutdown;
         loop {
             tokio::select! {
                 _ = shutdown.cancelled() => {
@@ -292,11 +295,12 @@ async fn background_processor(mut shutdown: ShutdownHandle) -> proc_daemon::Resu
 }
 
 /// Example metrics reporter
-async fn metrics_reporter(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
+async fn metrics_reporter(shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
     info!("Starting metrics reporter");
 
     #[cfg(feature = "tokio")]
     {
+        let mut shutdown = shutdown;
         loop {
             tokio::select! {
                 _ = shutdown.cancelled() => {

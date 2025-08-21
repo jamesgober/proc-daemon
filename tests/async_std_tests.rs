@@ -4,7 +4,6 @@
 
 use proc_daemon::shutdown::ShutdownCoordinator;
 use proc_daemon::subsystem::SubsystemManager;
-use proc_daemon::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -41,8 +40,7 @@ async fn test_subsystem_execution_in_async_std() {
     let start_result = manager.start_subsystem(id).await;
     assert!(
         start_result.is_ok(),
-        "Failed to start subsystem: {:?}",
-        start_result
+        "Failed to start subsystem: {start_result:?}"
     );
 
     // Wait longer for subsystem to execute - async-std needs more time
@@ -66,7 +64,7 @@ async fn test_subsystem_execution_in_async_std() {
     );
 
     // Test shutdown coordination
-    coordinator.initiate_shutdown(proc_daemon::shutdown::ShutdownReason::Requested);
+    let _ = coordinator.initiate_shutdown(proc_daemon::shutdown::ShutdownReason::Requested);
 
     // Wait for subsystem to shut down
     async_std::task::sleep(Duration::from_millis(200)).await;

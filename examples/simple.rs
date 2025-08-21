@@ -25,7 +25,7 @@ async fn simple_worker(mut shutdown: proc_daemon::shutdown::ShutdownHandle) -> R
 }
 
 #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-async fn simple_worker(mut shutdown: proc_daemon::shutdown::ShutdownHandle) -> Result<()> {
+async fn simple_worker(shutdown: proc_daemon::shutdown::ShutdownHandle) -> Result<()> {
     use tracing::info;
     let mut counter = 0;
 

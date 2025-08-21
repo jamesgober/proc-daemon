@@ -66,11 +66,15 @@
 
 #[allow(unused_imports)]
 use crate::error::{Error, Result};
+#[cfg(feature = "metrics")]
+use crate::metrics::MetricsCollector;
+use arc_swap::ArcSwap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 // Runtime-specific JoinHandle types
 #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+#[allow(unused_imports)]
 use async_std::task::JoinHandle as AsyncJoinHandle;
 #[cfg(not(any(feature = "tokio", feature = "async-std")))]
 use std::thread::JoinHandle;
@@ -116,6 +120,18 @@ pub struct ResourceUsage {
 
     /// Number of threads in the process
     thread_count: u32,
+}
+
+/// Monitoring alerts emitted by `ResourceTracker`.
+#[derive(Debug, Clone)]
+pub enum Alert {
+    /// Soft memory limit exceeded (informational)
+    MemorySoftLimit {
+        /// The configured soft memory limit in bytes
+        limit_bytes: u64,
+        /// The current memory usage in bytes when the alert was triggered
+        current_bytes: u64,
+    },
 }
 
 impl ResourceUsage {
@@ -169,8 +185,8 @@ pub struct ResourceTracker {
     /// The interval at which to sample resource usage
     sample_interval: Duration,
 
-    /// The current resource usage
-    current_usage: Arc<RwLock<ResourceUsage>>,
+    /// The current resource usage (lock-free reads with arc-swap)
+    current_usage: Arc<ArcSwap<ResourceUsage>>,
 
     /// Historical usage data with timestamps
     history: Arc<RwLock<Vec<ResourceUsage>>>,
@@ -188,6 +204,17 @@ pub struct ResourceTracker {
 
     /// The process ID being monitored (usually self)
     pid: u32,
+
+    /// Optional soft memory limit in bytes. If exceeded, an alert is emitted.
+    memory_soft_limit_bytes: Option<u64>,
+
+    /// Optional alert handler callback
+    #[allow(clippy::type_complexity)]
+    on_alert: Option<Arc<dyn Fn(Alert) + Send + Sync + 'static>>,
+
+    /// Optional metrics collector (feature-gated)
+    #[cfg(feature = "metrics")]
+    metrics: Option<MetricsCollector>,
 }
 
 impl ResourceTracker {
@@ -199,11 +226,15 @@ impl ResourceTracker {
 
         Self {
             sample_interval,
-            current_usage: Arc::new(RwLock::new(initial_usage)),
+            current_usage: Arc::new(ArcSwap::from_pointee(initial_usage)),
             history: Arc::new(RwLock::new(Vec::new())),
             max_history: 60, // Default to 1 minute at 1 second intervals
             task_handle: None,
             pid: std::process::id(),
+            memory_soft_limit_bytes: None,
+            on_alert: None,
+            #[cfg(feature = "metrics")]
+            metrics: None,
         }
     }
 
@@ -211,6 +242,52 @@ impl ResourceTracker {
     #[must_use]
     pub const fn with_max_history(mut self, max_entries: usize) -> Self {
         self.max_history = max_entries;
+        self
+    }
+
+    /// Sets a soft memory limit in bytes. When exceeded, an alert is emitted via `on_alert`.
+    #[must_use]
+    pub const fn with_memory_soft_limit_bytes(mut self, bytes: u64) -> Self {
+        self.memory_soft_limit_bytes = Some(bytes);
+        self
+    }
+
+    /// Sets an alert handler callback for monitoring alerts.
+    #[must_use]
+    pub fn with_alert_handler<F>(mut self, f: F) -> Self
+    where
+        F: Fn(Alert) + Send + Sync + 'static,
+    {
+        self.on_alert = Some(Arc::new(f));
+        self
+    }
+
+    /// Attaches a metrics collector for reporting resource metrics.
+    #[cfg(feature = "metrics")]
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: MetricsCollector) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+
+    /// Convenience: route alerts to tracing logs.
+    ///
+    /// Logs as `tracing::warn!` with structured fields per alert type.
+    #[must_use]
+    pub fn with_alert_to_tracing(mut self) -> Self {
+        self.on_alert = Some(Arc::new(|alert| match alert {
+            Alert::MemorySoftLimit {
+                limit_bytes,
+                current_bytes,
+            } => {
+                tracing::warn!(
+                    target: "proc_daemon::resources",
+                    limit_bytes,
+                    current_bytes,
+                    "Resource alert: soft memory limit exceeded"
+                );
+            }
+        }));
         self
     }
 
@@ -222,6 +299,7 @@ impl ResourceTracker {
     /// Returns an error if the process ID cannot be determined or
     /// if there's an issue with the system APIs when gathering resource metrics
     #[cfg(all(feature = "tokio", not(feature = "async-std")))]
+    #[allow(clippy::missing_errors_doc)]
     pub fn start(&mut self) -> Result<()> {
         if self.task_handle.is_some() {
             return Ok(()); // Already started
@@ -232,34 +310,65 @@ impl ResourceTracker {
         let current_usage = Arc::clone(&self.current_usage);
         let pid = self.pid;
         let max_history = self.max_history;
+        let memory_soft_limit_bytes = self.memory_soft_limit_bytes;
+        let on_alert = self.on_alert.clone();
+        #[cfg(feature = "metrics")]
+        let metrics = self.metrics.clone();
 
         let handle = tokio::spawn(async move {
             let mut interval_timer = time::interval(sample_interval);
             let mut last_cpu_time = 0.0;
             let mut last_timestamp = Instant::now();
+            #[cfg(feature = "metrics")]
+            let mut last_tick = Instant::now();
 
             loop {
                 interval_timer.tick().await;
+                #[cfg(feature = "metrics")]
+                let tick_now = Instant::now();
 
                 // Get current resource usage
-                if let Ok(usage) = ResourceTracker::sample_resource_usage(
-                    pid,
-                    &mut last_cpu_time,
-                    &mut last_timestamp,
-                ) {
-                    // Update current usage
-                    if let Ok(mut current) = current_usage.write() {
-                        *current = usage.clone();
-                    }
+                if let Ok(usage) =
+                    Self::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
+                {
+                    // Update current usage (lock-free store)
+                    current_usage.store(Arc::new(usage.clone()));
 
                     // Update history
                     if let Ok(mut hist) = usage_history.write() {
-                        hist.push(usage);
+                        hist.push(usage.clone());
 
                         // Trim history if needed
                         if hist.len() > max_history {
                             hist.remove(0);
                         }
+                    }
+
+                    // Soft memory limit alert
+                    if let Some(limit) = memory_soft_limit_bytes {
+                        if usage.memory_bytes() > limit {
+                            if let Some(cb) = on_alert.as_ref() {
+                                cb(Alert::MemorySoftLimit {
+                                    limit_bytes: limit,
+                                    current_bytes: usage.memory_bytes(),
+                                });
+                            }
+                        }
+                    }
+
+                    // Metrics reporting (feature-gated)
+                    #[cfg(feature = "metrics")]
+                    if let Some(m) = metrics.as_ref() {
+                        m.set_gauge("proc.memory_bytes", usage.memory_bytes());
+                        let cpu_milli = (usage.cpu_percent() * 1000.0).max(0.0) as u64;
+                        m.set_gauge("proc.cpu_milli_percent", cpu_milli);
+                        m.set_gauge("proc.thread_count", usage.thread_count() as u64);
+                        m.increment_counter("proc.samples_total", 1);
+                        m.record_histogram(
+                            "proc.sample_interval",
+                            tick_now.saturating_duration_since(last_tick),
+                        );
+                        last_tick = tick_now;
                     }
                 }
             }
@@ -271,6 +380,7 @@ impl ResourceTracker {
 
     /// Starts the resource tracking
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    #[allow(clippy::missing_errors_doc)]
     pub fn start(&mut self) -> Result<()> {
         if self.task_handle.is_some() {
             return Ok(()); // Already started
@@ -281,33 +391,67 @@ impl ResourceTracker {
         let current_usage = Arc::clone(&self.current_usage);
         let pid = self.pid;
         let max_history = self.max_history; // Clone max_history to use inside async block
+        let memory_soft_limit_bytes = self.memory_soft_limit_bytes;
+        let on_alert = self.on_alert.clone();
+        #[cfg(feature = "metrics")]
+        let metrics = self.metrics.clone();
 
         let handle = async_std::task::spawn(async move {
             let mut last_cpu_time = 0.0;
             let mut last_timestamp = Instant::now();
+            #[cfg(feature = "metrics")]
+            let mut last_tick = Instant::now();
 
             loop {
                 async_std::task::sleep(sample_interval).await;
+                #[cfg(feature = "metrics")]
+                let tick_now = Instant::now();
 
                 // Get current resource usage
-                if let Ok(usage) = ResourceTracker::sample_resource_usage(
-                    pid,
-                    &mut last_cpu_time,
-                    &mut last_timestamp,
-                ) {
-                    // Update current usage
-                    if let Ok(mut current) = current_usage.write() {
-                        *current = usage.clone();
-                    }
+                if let Ok(usage) =
+                    Self::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
+                {
+                    // Update current usage (lock-free store via ArcSwap)
+                    current_usage.store(Arc::new(usage.clone()));
 
                     // Update history
                     if let Ok(mut hist) = usage_history.write() {
-                        hist.push(usage);
+                        hist.push(usage.clone());
 
                         // Trim history if needed
                         if hist.len() > max_history {
                             hist.remove(0);
                         }
+                    }
+
+                    // Soft memory limit alert
+                    if let Some(limit) = memory_soft_limit_bytes {
+                        if usage.memory_bytes() > limit {
+                            if let Some(cb) = on_alert.as_ref() {
+                                cb(Alert::MemorySoftLimit {
+                                    limit_bytes: limit,
+                                    current_bytes: usage.memory_bytes(),
+                                });
+                            }
+                        }
+                    }
+
+                    // Metrics reporting (feature-gated)
+                    #[cfg(feature = "metrics")]
+                    if let Some(m) = metrics.as_ref() {
+                        m.set_gauge("proc.memory_bytes", usage.memory_bytes());
+                        let cpu_milli = (usage.cpu_percent() * 1000.0).max(0.0) as u64;
+                        m.set_gauge("proc.cpu_milli_percent", cpu_milli);
+                        m.set_gauge("proc.thread_count", usage.thread_count() as u64);
+                        m.increment_counter("proc.samples_total", 1);
+                        m.record_histogram(
+                            "proc.sample_interval",
+                            tick_now.saturating_duration_since(last_tick),
+                        );
+                    }
+                    #[cfg(feature = "metrics")]
+                    {
+                        last_tick = tick_now;
                     }
                 }
             }
@@ -330,7 +474,7 @@ impl ResourceTracker {
 
     /// Stops the resource tracker, cancelling any ongoing monitoring task.
     ///
-    /// For async-std, this simply drops the JoinHandle which cancels the task.
+    /// For async-std, this simply drops the `JoinHandle` which cancels the task.
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     pub fn stop(&mut self) {
         // Just drop the handle, which will cancel the task on async-std
@@ -340,9 +484,7 @@ impl ResourceTracker {
     /// Returns the current resource usage
     #[must_use]
     pub fn current_usage(&self) -> ResourceUsage {
-        self.current_usage
-            .read()
-            .map_or_else(|_| ResourceUsage::new(0, 0.0, 0), |usage| usage.clone())
+        self.current_usage.load_full().as_ref().clone()
     }
 
     /// Returns a copy of the resource usage history
@@ -751,6 +893,32 @@ mod tests {
     async fn test_tracker_with_max_history() {
         let tracker = ResourceTracker::new(Duration::from_secs(1)).with_max_history(100);
         assert_eq!(tracker.max_history, 100);
+    }
+
+    #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
+    #[cfg_attr(miri, ignore)]
+    #[test]
+    fn test_windows_toolhelp_thread_count_path() {
+        let pid = std::process::id();
+        let mut last_cpu_time = 0.0;
+        let mut last_timestamp = Instant::now();
+
+        // Exercise the ToolHelp-based sampling path
+        let usage = ResourceTracker::sample_resource_usage(
+            pid,
+            &mut last_cpu_time,
+            &mut last_timestamp,
+        )
+        .expect(
+            "Windows sample_resource_usage should succeed with windows-monitoring feature enabled",
+        );
+
+        // A running process should have at least one thread
+        assert!(
+            usage.thread_count() >= 1,
+            "expected at least 1 thread, got {}",
+            usage.thread_count()
+        );
     }
 
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]

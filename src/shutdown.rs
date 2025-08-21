@@ -680,8 +680,8 @@ async fn test_shutdown_coordination() {
         let stats = coordinator.get_stats();
         assert!(stats.is_complete());
         // Use a more reasonable epsilon for floating point comparisons
-        const EPSILON: f64 = 1e-6;
-        assert!((stats.progress() - 1.0).abs() < EPSILON);
+        let epsilon: f64 = 1e-6;
+        assert!((stats.progress() - 1.0).abs() < epsilon);
     })
     .await;
 

@@ -5,6 +5,7 @@
 //! differences between Unix signals and Windows console events.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+#[allow(unused_imports)]
 use tracing::{debug, info, warn};
 
 use crate::ShutdownReason;
@@ -18,6 +19,7 @@ use crate::shutdown::ShutdownCoordinator;
 /// Cross-platform signal handler that coordinates shutdown.
 #[derive(Debug)]
 pub struct SignalHandler {
+    #[allow(dead_code)]
     shutdown_coordinator: ShutdownCoordinator,
     handling_signals: AtomicBool,
 }
@@ -186,7 +188,7 @@ impl SignalHandler {
             let term_recv = term.1.clone();
 
             match async_std::future::timeout(Duration::from_millis(100), term_recv.recv()).await {
-                Ok(Ok(_)) => {
+                Ok(Ok(())) => {
                     info!("Received SIGTERM, initiating graceful shutdown");
                     if self
                         .shutdown_coordinator
@@ -318,6 +320,7 @@ impl SignalHandler {
 // Simple signal handler for async-std on Unix
 #[cfg(all(unix, feature = "async-std", not(feature = "tokio")))]
 #[allow(dead_code)]
+#[allow(clippy::missing_const_for_fn)]
 extern "C" fn handle_signal(_signal: libc::c_int) {
     // In a real implementation, we'd need to communicate back to the async task
     // For now, this is a placeholder
