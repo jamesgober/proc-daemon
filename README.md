@@ -543,10 +543,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 <br><br><br>
 
 <div align="center">
-    <h2>
-        <img width="72px" src="./media/rust.svg" alt="Rust Logo">
-        <sub><br><sup><b>Built with ❤️ Rust.</b></sup></sub>
-    </h2>
+    <img width="72px" src="./media/rust.svg" alt="Rust Logo">
+    <sub><br><sup><b>Built with Rust.</b></sup></sub>
 </div>
 
 <br>
