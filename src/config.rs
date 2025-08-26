@@ -14,6 +14,14 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 
+use std::fs;
+
+#[cfg(feature = "config-watch")]
+use {
+    notify::{Event, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher},
+    std::sync::Arc,
+};
+
 /// Log level configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -222,12 +230,31 @@ impl Config {
         let path = path.as_ref();
 
         // Base figment configuration
-        let figment = Figment::from(Serialized::defaults(Self::default()))
-            .merge(Env::prefixed("DAEMON_").split("_"));
+        let base = Figment::from(Serialized::defaults(Self::default()));
+        let figment = base.merge(Env::prefixed("DAEMON_").split("_"));
 
         // Add config file if it exists
         let figment = if path.exists() {
-            // We use functional style to avoid mutability warnings
+            // Try fast-path buffered TOML parsing while minimizing allocations when enabled
+            #[cfg(feature = "toml")]
+            {
+                if path.extension().and_then(|s| s.to_str()) == Some("toml") {
+                    // Attempt a single buffered read, avoid intermediate String by parsing from &str
+                    if let Ok(bytes) = fs::read(path) {
+                        if let Ok(s) = std::str::from_utf8(&bytes) {
+                            if let Ok(file_cfg) = toml::from_str::<Self>(s) {
+                                return Figment::from(Serialized::defaults(Self::default()))
+                                    .merge(Serialized::from(file_cfg, "file"))
+                                    .merge(Env::prefixed("DAEMON_").split("_"))
+                                    .extract()
+                                    .map_err(Error::from);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Provider-based path (original behavior)
             let result = figment;
             #[cfg(feature = "toml")]
             let result = result.merge(figment::providers::Toml::file(path));
@@ -509,6 +536,52 @@ impl ConfigBuilder {
 impl Default for ConfigBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// Optional config file watcher using notify
+#[cfg(feature = "config-watch")]
+impl Config {
+    /// Start watching a configuration file and invoke a callback on changes.
+    /// This uses the same loading path as `load_from_file`, so it will pick up
+    /// any enabled fast-paths (e.g., `mmap-config`).
+    ///
+    /// The returned watcher must be kept alive for notifications to continue.
+    ///
+    /// # Errors
+    /// Returns an error if the watcher cannot be created or the path cannot be watched.
+    pub fn watch_file<F, P>(path: P, on_change: F) -> Result<RecommendedWatcher>
+    where
+        F: Fn(Result<Self>) + Send + Sync + 'static,
+        P: AsRef<Path>,
+    {
+        let path_buf: Arc<PathBuf> = Arc::new(path.as_ref().to_path_buf());
+        let cb: Arc<dyn Fn(Result<Self>) + Send + Sync> = Arc::new(on_change);
+
+        let mut watcher = notify::recommended_watcher({
+            let cb = Arc::clone(&cb);
+            let arc_path = Arc::clone(&path_buf);
+            move |res: NotifyResult<Event>| {
+                // On any filesystem event, attempt reload and notify
+                match res {
+                    Ok(_event) => {
+                        let result = Self::load_from_file(arc_path.as_ref());
+                        cb(result);
+                    }
+                    Err(e) => {
+                        // Surface error to callback as a runtime error
+                        cb(Err(Error::runtime_with_source("Config watcher error", e)));
+                    }
+                }
+            }
+        })
+        .map_err(|e| Error::runtime_with_source("Failed to create config watcher", e))?;
+
+        watcher
+            .watch(path_buf.as_ref(), RecursiveMode::NonRecursive)
+            .map_err(|e| Error::runtime_with_source("Failed to watch config path", e))?;
+
+        Ok(watcher)
     }
 }
 

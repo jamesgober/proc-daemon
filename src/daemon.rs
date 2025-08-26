@@ -15,6 +15,11 @@ use crate::shutdown::{ShutdownCoordinator, ShutdownReason};
 use crate::signal::{SignalConfig, SignalHandler};
 use crate::subsystem::{Subsystem, SubsystemId, SubsystemManager};
 
+#[cfg(feature = "config-watch")]
+use arc_swap::ArcSwap;
+#[cfg(feature = "config-watch")]
+use notify::RecommendedWatcher;
+
 /// Type alias for subsystem registration function
 type SubsystemRegistrationFn = Box<dyn FnOnce(&SubsystemManager) -> SubsystemId + Send + 'static>;
 
@@ -22,12 +27,18 @@ type SubsystemRegistrationFn = Box<dyn FnOnce(&SubsystemManager) -> SubsystemId 
 pub struct Daemon {
     /// Configuration
     config: Arc<Config>,
+    /// Live-updating configuration snapshot (when config-watch is enabled)
+    #[cfg(feature = "config-watch")]
+    config_shared: Arc<ArcSwap<Config>>,
     /// Shutdown coordination
     shutdown_coordinator: ShutdownCoordinator,
     /// Subsystem management
     subsystem_manager: SubsystemManager,
     /// Signal handling
     signal_handler: Option<Arc<SignalHandler>>,
+    /// Keep the config watcher alive (when enabled)
+    #[cfg(feature = "config-watch")]
+    _config_watcher: Option<RecommendedWatcher>,
     /// Start time
     started_at: Option<Instant>,
 }
@@ -66,6 +77,13 @@ impl Daemon {
 
         // Validate configuration
         self.config.validate()?;
+
+        // Apply optional scheduler hints (no-op placeholders for future tuning)
+        #[cfg(feature = "scheduler-hints")]
+        {
+            crate::scheduler::apply_process_hints(&self.config);
+            crate::scheduler::apply_runtime_hints();
+        }
 
         // Start all subsystems
         if let Err(e) = self.subsystem_manager.start_all().await {
@@ -268,15 +286,27 @@ impl Daemon {
     pub fn config(&self) -> &Config {
         &self.config
     }
+
+    /// Get a snapshot of the current configuration. When the `config-watch` feature
+    /// is enabled and hot-reload is active, this reflects the most recent loaded
+    /// configuration; otherwise it returns the initial configuration.
+    #[cfg(feature = "config-watch")]
+    pub fn config_snapshot(&self) -> Arc<Config> {
+        self.config_shared.load_full()
+    }
 }
 
 impl Clone for Daemon {
     fn clone(&self) -> Self {
         Self {
             config: Arc::clone(&self.config),
+            #[cfg(feature = "config-watch")]
+            config_shared: Arc::clone(&self.config_shared),
             shutdown_coordinator: self.shutdown_coordinator.clone(),
             subsystem_manager: self.subsystem_manager.clone(),
             signal_handler: self.signal_handler.clone(),
+            #[cfg(feature = "config-watch")]
+            _config_watcher: None,
             started_at: self.started_at,
         }
     }
@@ -454,11 +484,52 @@ impl DaemonBuilder {
             None
         };
 
+        // Prepare configuration arcs
+        let config_arc = Arc::new(self.config);
+
+        #[cfg(feature = "config-watch")]
+        let config_shared: Arc<ArcSwap<Config>> = Arc::new(ArcSwap::from(config_arc.clone()));
+
+        // Optionally start config watcher when hot_reload is enabled
+        #[cfg(feature = "config-watch")]
+        let mut config_watcher: Option<RecommendedWatcher> = None;
+
+        #[cfg(feature = "config-watch")]
+        {
+            if config_arc.hot_reload {
+                let swap = Arc::clone(&config_shared);
+                match Config::watch_file(crate::DEFAULT_CONFIG_FILE, move |res| match res {
+                    Ok(new_cfg) => {
+                        swap.store(Arc::new(new_cfg));
+                        info!(
+                            "Configuration hot-reloaded from {}",
+                            crate::DEFAULT_CONFIG_FILE
+                        );
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Configuration reload failed");
+                    }
+                }) {
+                    Ok(w) => {
+                        config_watcher = Some(w);
+                        info!("Config watcher started for {}", crate::DEFAULT_CONFIG_FILE);
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to start config watcher; continuing without hot-reload");
+                    }
+                }
+            }
+        }
+
         Ok(Daemon {
-            config: Arc::new(self.config),
+            config: config_arc,
+            #[cfg(feature = "config-watch")]
+            config_shared,
             shutdown_coordinator,
             subsystem_manager,
             signal_handler,
+            #[cfg(feature = "config-watch")]
+            _config_watcher: config_watcher,
             started_at: None,
         })
     }

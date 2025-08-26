@@ -10,12 +10,52 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2025-08-26
+
 ### Added
+
+- Optional feature flags:
+  - `mimalloc`: opt-in global allocator for allocation-heavy workloads
+  - `high-res-timing`: exposes `proc_daemon::timing` backed by `quanta` for fast monotonic timestamps
+  - `scheduler-hints`: exposes `proc_daemon::scheduler` hooks (no-op by default)
+  - `scheduler-hints-unix`: best-effort Unix niceness adjustment via `renice` (no-op without privileges)
+  - `lockfree-coordination`: enables lock-free MPMC event channel via `crossbeam-channel` in `proc_daemon::coord`
+  - `profiling`: optional CPU profiling helpers in `proc_daemon::profiling` using `pprof`
+  - `heap-profiling`: optional heap profiling via `dhat` in `proc_daemon::profiling::heap`
+  - `mmap-config`: reserved flag for config fast-path (kept for compatibility)
+
+- Configuration hot-reload (feature: `config-watch`):
+  - Integrated filesystem watcher to monitor config file and live-reload on changes.
+  - Added live config snapshot maintained via `arc-swap::ArcSwap` and exposed via `Daemon::config_snapshot()` (feature-gated).
+  - `DaemonBuilder::build()` auto-starts the watcher when `Config.hot_reload` is true and keeps the watcher handle alive.
+
+- Subsystem events: `SubsystemManager::enable_events()` and `try_next_event()` publish non-blocking `SubsystemEvent::StateChanged` notifications for state transitions.
+- API: `SubsystemManager::subscribe_events()` (behind `lockfree-coordination`) to obtain a cloned receiver for subsystem events.
 
 ### Fixed
 
+- Error conversions: map `notify::Error` into project `Error` using `runtime_with_source` in `src/config.rs` to fix compilation with `config-watch` + `toml` + `mmap-config`.
+- Clippy/lints cleanup across core modules:
+  - `src/config.rs`: removed unnecessary `let _ =` around match in watcher callback (`let_unit_value`).
+  - `src/coord.rs`: added `# Errors` docs to `chan::try_recv()` and backticked `std::sync::mpsc` (`doc_markdown`, `missing_errors_doc`).
+  - `src/subsystem.rs`: tightened lock lifetimes and added `# Panics` docs (`significant_drop_tightening`, `missing_panics_doc`); simplified `try_next_event()` to use `.ok()` idiom.
+  - `src/profiling.rs`: added `# Errors` docs, replaced wildcard imports in heap module, backticked `DHAT_OUT`, and gated `ErrorCode` import correctly.
+- Clippy cleanup (examples + library):
+  - `src/coord.rs`: add `#[must_use]` to `chan::unbounded()`.
+  - `src/resources.rs`: avoid repeated `Instant::now()` comparisons; round CPU milli-percent before casting; prefer `u64::from` for thread count.
+  - Verified clean with `cargo clippy -- -D warnings`, `--all-features`, and `--examples`.
 
 ### Changed
+
+- Docs: Updated `README.md` feature matrix and added usage sections for `mimalloc` and `high-res-timing`.
+- Docs: Updated `docs/API.md` installation snippet versions and added Feature Flags section mirroring `README.md`.
+- Internal: Feature-gated global allocator hookup when `mimalloc` is enabled; added `timing::now()` returning `quanta::Instant` when `high-res-timing` is enabled.
+- Internal: When `scheduler-hints` is enabled, hooks are invoked at daemon startup (`Daemon::run()`). Behavior remains no-op unless `scheduler-hints-unix` is also enabled on Unix, where a best-effort `renice` is attempted.
+- Internal: Introduced coordination facade `proc_daemon::coord::chan` with a uniform API across backends.
+- Docs/Examples: Added event subscription coverage (`subscribe_events()`) and event polling worker wiring in `examples/simple.rs` for Tokio and async-std.
+ - Internal: Integrated optional config watcher into `src/daemon.rs` guarded by `config-watch`; preserved `config()` and added `config_snapshot()` (feature-gated).
+ - Internal: Added best-effort CPU affinity application on Linux when `scheduler-hints-unix` is enabled (uses `nix::sched::sched_setaffinity`). No-ops on other platforms.
+ - Performance: Reworked TOML config fast-path to avoid intermediate allocations and unsafe mmap, honoring `#![deny(unsafe_code)]`. Still falls back to Figment providers on error.
 
 
 
@@ -143,7 +183,8 @@ Initial pre-dev release for backup.
 - `README` file.
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/jamesgober/proc-daemon/compare/v0.6.1...v0.9.0
 [0.6.1]: https://github.com/jamesgober/proc-daemon/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/jamesgober/proc-daemon/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jamesgober/proc-daemon/compare/v0.3.0...v0.5.0
