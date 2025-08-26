@@ -4,6 +4,7 @@
 //! within a daemon, handling their lifecycle, monitoring their health, and
 //! coordinating graceful shutdown.
 
+use crate::coord;
 use crate::error::{Error, Result};
 use crate::pool::{StringPool, VecPool};
 use crate::shutdown::{ShutdownCoordinator, ShutdownHandle};
@@ -99,6 +100,22 @@ impl std::fmt::Display for SubsystemState {
     }
 }
 
+/// Event emitted by the `SubsystemManager` to coordinate state changes without locks on hot paths.
+#[derive(Debug, Clone)]
+pub enum SubsystemEvent {
+    /// A subsystem transitioned state
+    StateChanged {
+        /// Subsystem id
+        id: SubsystemId,
+        /// Subsystem name
+        name: String,
+        /// New state
+        state: SubsystemState,
+        /// Timestamp of the change
+        at: Instant,
+    },
+}
+
 /// Metadata about a subsystem.
 #[derive(Debug, Clone)]
 pub struct SubsystemMetadata {
@@ -168,6 +185,10 @@ pub struct SubsystemManager {
     vec_pool: VecPool<(SubsystemId, String, SubsystemState, Arc<dyn Subsystem>)>,
     /// Pool for metadata vectors
     metadata_pool: VecPool<SubsystemMetadata>,
+    /// Optional coordination channel sender for emitting events
+    events_tx: Mutex<Option<coord::chan::Sender<SubsystemEvent>>>,
+    /// Optional coordination channel receiver for consuming events
+    events_rx: Mutex<Option<coord::chan::Receiver<SubsystemEvent>>>,
 }
 
 impl SubsystemManager {
@@ -183,7 +204,41 @@ impl SubsystemManager {
             string_pool: StringPool::new(32, 128, 64), // 32 pre-allocated strings, max 128, 64 bytes capacity each
             vec_pool: VecPool::new(8, 32, 16), // 8 pre-allocated vectors, max 32, 16 items capacity each
             metadata_pool: VecPool::new(8, 32, 16), // 8 pre-allocated vectors, max 32, 16 items capacity each
+            events_tx: Mutex::new(None),
+            events_rx: Mutex::new(None),
         }
+    }
+
+    /// Enable coordination events. Subsequent state changes will emit `SubsystemEvent`s.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn enable_events(&self) {
+        let mut tx_guard = self.events_tx.lock().unwrap();
+        let mut rx_guard = self.events_rx.lock().unwrap();
+        if tx_guard.is_some() || rx_guard.is_some() {
+            return;
+        }
+        let (tx, rx) = coord::chan::unbounded();
+        *tx_guard = Some(tx);
+        *rx_guard = Some(rx);
+        // Avoid holding `tx_guard` longer than necessary in this scope
+        drop(tx_guard);
+        // Drop rx_guard as well to avoid holding the lock longer than needed
+        drop(rx_guard);
+    }
+
+    /// Try to fetch the next coordination event without blocking.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn try_next_event(&self) -> Option<SubsystemEvent> {
+        let rx_guard = self.events_rx.lock().unwrap();
+        rx_guard
+            .as_ref()
+            .and_then(|rx| coord::chan::try_recv(rx).ok())
     }
 
     /// Register a new subsystem with the manager.
@@ -808,6 +863,22 @@ impl SubsystemManager {
             if let Some(stopped) = stopped_at {
                 metadata.stopped_at = Some(stopped);
             }
+            // Emit coordination event if enabled
+            self.publish_event(SubsystemEvent::StateChanged {
+                id,
+                name: metadata.name.clone(),
+                state: metadata.state,
+                at: Instant::now(),
+            });
+        }
+    }
+
+    /// Publish an event to the coordination channel if enabled.
+    fn publish_event(&self, event: SubsystemEvent) {
+        let tx_opt = self.events_tx.lock().unwrap().as_ref().cloned();
+        if let Some(tx) = tx_opt {
+            // Ignore send errors (e.g., no receiver)
+            let _ = tx.send(event);
         }
     }
 
@@ -873,7 +944,25 @@ impl Clone for SubsystemManager {
             string_pool: StringPool::new(32, 128, 64),
             vec_pool: VecPool::new(8, 32, 16),
             metadata_pool: VecPool::new(8, 32, 16),
+            events_tx: Mutex::new(None),
+            events_rx: Mutex::new(None),
         }
+    }
+}
+
+impl SubsystemManager {
+    /// Subscribe to subsystem coordination events (lock-free backend only).
+    ///
+    /// Returns a cloned receiver to the shared event stream when the
+    /// `lockfree-coordination` feature is enabled and events have been
+    /// previously enabled via `enable_events()`.
+    #[cfg(feature = "lockfree-coordination")]
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal mutex is poisoned.
+    pub fn subscribe_events(&self) -> Option<coord::chan::Receiver<SubsystemEvent>> {
+        self.events_rx.lock().unwrap().as_ref().cloned()
     }
 }
 

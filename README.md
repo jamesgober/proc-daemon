@@ -51,10 +51,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "0.6.0"
+proc-daemon = "0.9.0"
 
 # Optional features
-proc-daemon = { version = "0.6.0", features = ["full"] }
+proc-daemon = { version = "0.9.0", features = ["full"] }
 ```
 
 ### Feature Flags
@@ -67,6 +67,14 @@ proc-daemon = { version = "0.6.0", features = ["full"] }
 | `console` | Enhanced console output | ❌ |
 | `json-logs` | JSON structured logging | ❌ |
 | `config-watch` | Configuration hot-reloading | ❌ |
+| `mmap-config` | Memory-mapped config file loading (TOML fast-path, safe fallback) | ❌ |
+| `mimalloc` | Use mimalloc as global allocator | ❌ |
+| `high-res-timing` | High-resolution timing via `quanta` | ❌ |
+| `scheduler-hints` | Enable scheduler tuning hooks (no-op by default) | ❌ |
+| `scheduler-hints-unix` | Best-effort Unix niceness adjustment (uses `renice`; no-op without privileges) | ❌ |
+| `lockfree-coordination` | Lock-free coordination/events via crossbeam-channel | ❌ |
+| `profiling` | Optional CPU profiling via `pprof` | ❌ |
+| `heap-profiling` | Optional heap profiling via `dhat` | ❌ |
 | `full` | All features enabled | ❌ |
 
 ## Quick Start
@@ -105,6 +113,58 @@ async fn main() -> proc_daemon::Result<()> {
         .run()
         .await
 }
+```
+
+### High-Resolution Timing (optional)
+
+Enable the `high-res-timing` feature to access a fast, monotonic clock backed by `quanta`:
+
+```toml
+[dependencies]
+proc-daemon = { version = "0.9.0", features = ["high-res-timing"] }
+```
+
+```rust
+#[cfg(feature = "high-res-timing")]
+{
+    let t0 = proc_daemon::timing::now();
+    // ... work ...
+    let t1 = proc_daemon::timing::now();
+    let dt = t1.duration_since(t0);
+    println!("elapsed: {:?}", dt);
+}
+```
+
+### Mimalloc Global Allocator (optional)
+
+Enable the `mimalloc` feature to switch the global allocator for potential performance wins in allocation-heavy workloads:
+
+```toml
+[dependencies]
+proc-daemon = { version = "0.9.0", features = ["mimalloc"] }
+```
+
+No code changes are required—`proc-daemon` sets the global allocator when the feature is enabled.
+
+### Lock-free Coordination (optional)
+
+Enable the `lockfree-coordination` feature to use a lock-free MPMC channel for coordination. This exposes a small channel facade and optional subsystem events for state changes.
+
+```toml
+[dependencies]
+proc-daemon = { version = "0.9.0", features = ["lockfree-coordination"] }
+```
+
+APIs:
+
+- `proc_daemon::coord::chan::{unbounded, try_recv}` — Uniform API over `crossbeam-channel` (enabled) or `std::sync::mpsc` (fallback).
+- `SubsystemManager::enable_events()` and `SubsystemManager::try_next_event()` — non-blocking event polling.
+- `SubsystemManager::subscribe_events()` — get a `Receiver<SubsystemEvent>` to poll from another task when events are enabled.
+
+Event type:
+
+```text
+SubsystemEvent::StateChanged { id, name, state, at }
 ```
 
 ### Multi-Subsystem Daemon
@@ -374,6 +434,26 @@ cargo test --test integration
 # Run benchmarks
 cargo bench
 ```
+
+
+<hr>
+<br>
+
+
+### Hot-Reload (optional)
+
+Enable `config-watch` to live-reload `daemon.toml` at runtime (optionally combine with `mmap-config` for fast TOML loading). The daemon maintains a live snapshot accessible via `Daemon::config_snapshot()`.
+
+Run the example:
+
+```bash
+cargo run --example hot_reload --features "tokio config-watch toml mmap-config"
+```
+
+Notes:
+
+- Place `daemon.toml` in the working directory.
+- The watcher starts automatically when `Config.hot_reload = true`.
 
 <hr>
 <br>

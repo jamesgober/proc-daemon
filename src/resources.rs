@@ -360,9 +360,9 @@ impl ResourceTracker {
                     #[cfg(feature = "metrics")]
                     if let Some(m) = metrics.as_ref() {
                         m.set_gauge("proc.memory_bytes", usage.memory_bytes());
-                        let cpu_milli = (usage.cpu_percent() * 1000.0).max(0.0) as u64;
+                        let cpu_milli = (usage.cpu_percent() * 1000.0).max(0.0).round() as u64;
                         m.set_gauge("proc.cpu_milli_percent", cpu_milli);
-                        m.set_gauge("proc.thread_count", usage.thread_count() as u64);
+                        m.set_gauge("proc.thread_count", u64::from(usage.thread_count()));
                         m.increment_counter("proc.samples_total", 1);
                         m.record_histogram(
                             "proc.sample_interval",
@@ -440,9 +440,9 @@ impl ResourceTracker {
                     #[cfg(feature = "metrics")]
                     if let Some(m) = metrics.as_ref() {
                         m.set_gauge("proc.memory_bytes", usage.memory_bytes());
-                        let cpu_milli = (usage.cpu_percent() * 1000.0).max(0.0) as u64;
+                        let cpu_milli = (usage.cpu_percent() * 1000.0).max(0.0).round() as u64;
                         m.set_gauge("proc.cpu_milli_percent", cpu_milli);
-                        m.set_gauge("proc.thread_count", usage.thread_count() as u64);
+                        m.set_gauge("proc.thread_count", u64::from(usage.thread_count()));
                         m.increment_counter("proc.samples_total", 1);
                         m.record_histogram(
                             "proc.sample_interval",
@@ -608,7 +608,7 @@ impl ResourceTracker {
                 let now = Instant::now();
 
                 // Calculate CPU usage percentage
-                if *last_timestamp != Instant::now() {
+                if *last_timestamp != now {
                     let time_diff = now.duration_since(*last_timestamp).as_secs_f64();
                     if time_diff > 0.0 {
                         // CPU usage is normalized by the number of cores
@@ -783,7 +783,7 @@ impl ResourceTracker {
             let total_time = (kernel_ns + user_ns) as f64 / 1_000_000_000.0; // Convert to seconds
 
             let now = Instant::now();
-            if *last_timestamp != Instant::now() {
+            if *last_timestamp != now {
                 let time_diff = now.duration_since(*last_timestamp).as_secs_f64();
                 if time_diff > 0.0 {
                     let time_diff_cpu = total_time - *last_cpu_time;
