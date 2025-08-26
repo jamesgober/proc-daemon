@@ -484,7 +484,7 @@ cargo bench
 </br>
 </br>
 
-**🔗 See [`PERFORMANCE.md`](./PERFORMANCE.md) for up-to-date benchmarks, metrics, and version-over-version improvements.**
+**🔗 See [`PERFORMANCE.md`](./docs/PERFORMANCE.md) for up-to-date benchmarks, metrics, and version-over-version improvements.**
 
 
 <br>
@@ -540,7 +540,7 @@ cargo test --all-features
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-<br>
+<br><br><br>
 
 <div align="center">
     <h2>
