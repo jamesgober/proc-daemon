@@ -217,7 +217,7 @@ pub mod scheduler {
                 let _ = set.set(cpu);
             }
             match sched_setaffinity(Pid::from_raw(0), &set) {
-                Ok(_) => debug!(
+                Ok(()) => debug!(
                     cpus,
                     "scheduler-hints: setaffinity applied to current process threads (best-effort)"
                 ),
