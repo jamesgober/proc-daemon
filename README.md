@@ -544,7 +544,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 
 <div align="center">
     <img width="72px" src="./media/rust.svg" alt="Rust Logo">
-    <sub><br><sup><b>Built with Rust.</b></sup></sub>
+    <br><sup><b>Built with Rust.</b></sup>
 </div>
 
 <br>
