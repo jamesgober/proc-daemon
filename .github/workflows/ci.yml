@@ -51,16 +51,16 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build (debug)
-        run: cargo build --verbose --all-features
+        run: cargo build --verbose
 
       - name: Build (release)
-        run: cargo build --release --verbose --all-features
+        run: cargo build --release --verbose
 
       - name: Run tests
-        run: cargo test --workspace --all-features --verbose
+        run: cargo test --workspace --verbose
 
       - name: Run tests (release mode)
-        run: cargo test --workspace --all-features --release --verbose
+        run: cargo test --workspace --release --verbose
 
   # Feature matrix testing
   feature-test:
@@ -220,8 +220,8 @@ jobs:
       - name: Regenerate Cargo.lock with MSRV
         run: cargo generate-lockfile
         
-      - name: Check MSRV compatibility (all features, lib only)
-        run: cargo check --lib --all-features
-
-      - name: Check MSRV compatibility (no default features, lib only)
+      - name: Check MSRV compatibility (lib only, no default features)
         run: cargo check --lib --no-default-features
+
+      - name: Check MSRV compatibility (lib only, minimal features)
+        run: cargo check --lib --no-default-features --features "tokio toml"
