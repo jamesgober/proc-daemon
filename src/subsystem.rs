@@ -65,8 +65,6 @@ pub enum RestartPolicy {
     },
 }
 
-
-
 /// State of a subsystem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubsystemState {
@@ -772,8 +770,6 @@ impl SubsystemManager {
         // Process data without holding the lock
         let mut running_count = 0;
         let mut failed_count = 0;
-        #[allow(unused_variables)]
-        let mut stopped_count = 0; // Not used in struct but needed for state tracking
         let mut stopping_count = 0;
 
         // Collect stats from the metadata
@@ -781,7 +777,6 @@ impl SubsystemManager {
             match metadata.state {
                 SubsystemState::Running => running_count += 1,
                 SubsystemState::Failed => failed_count += 1,
-                SubsystemState::Stopped => stopped_count += 1,
                 SubsystemState::Stopping => stopping_count += 1,
                 _ => {} // Other states not counted specially
             }

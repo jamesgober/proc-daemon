@@ -78,7 +78,6 @@ use std::time::{Duration, Instant};
 #[allow(unused_imports)]
 use async_std::task::JoinHandle as AsyncJoinHandle;
 #[cfg(not(any(feature = "tokio", feature = "async-std")))]
-
 #[cfg(feature = "tokio")]
 #[allow(unused_imports)]
 use tokio::task::JoinHandle;
@@ -668,6 +667,7 @@ impl ResourceTracker {
 
     #[cfg(target_os = "linux")]
     #[allow(clippy::cast_precision_loss)]
+    #[allow(unsafe_code)]
     fn linux_clk_tck() -> f64 {
         // SAFETY: This is a read-only system configuration query that's guaranteed to be safe.
         // sysconf(_SC_CLK_TCK) returns the number of clock ticks per second, which is a
