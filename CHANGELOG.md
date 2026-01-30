@@ -10,20 +10,7 @@
 
 ## [Unreleased]
 
-### Fixed
-
-- **CRITICAL:** Fixed unsafe code violation in Linux clock tick retrieval (added safety documentation)
-- **CRITICAL:** Updated `tracing-subscriber` to 0.3.20 to fix RUSTSEC-2025-0055 vulnerability
-- **CRITICAL:** Bumped MSRV to 1.82.0 to resolve `indexmap` dependency compatibility
-- Fixed all clippy warnings and compilation errors across CI/CD platforms
-- Fixed unused import warnings in config, signal, and resources modules
-- Fixed unused variable/assignment warnings in subsystem and resources modules
-- Replaced manual `Default` implementations with `#[derive(Default)]` as suggested by clippy
-- Fixed unchecked time subtraction using `checked_sub` in shutdown module
-- Replaced `once_cell::sync::Lazy` with `std::sync::LazyLock` for high-res timing
-- Simplified health check logic using `is_none_or` instead of `map_or`
-
-- _No other changes yet._
+- _No changes yet._
 
 ## [1.0.0-RC.1] - 2026-01-30
 
@@ -103,6 +90,8 @@
 ### Changed
 
 - Version: bumped crate version to `1.0.0-rc.1` for the release candidate.
+- MSRV: bumped from 1.75.0 to 1.82.0 to resolve `indexmap` dependency compatibility.
+- Dependencies: updated `tracing-subscriber` to 0.3.20 to fix RUSTSEC-2025-0055 vulnerability.
 - Shutdown coordination now tracks graceful, force, and kill timeouts independently.
 - Config hot-reload watches the configured path (or `work_dir` + `DEFAULT_CONFIG_FILE` when provided).
 - Metrics histograms are capped to prevent unbounded growth.
@@ -111,6 +100,14 @@
 
 ### Fixed
 
+- **CRITICAL:** Fixed unsafe code violation in Linux clock tick retrieval (added comprehensive safety documentation).
+- **CRITICAL:** Fixed all clippy warnings and compilation errors across CI/CD platforms.
+- Fixed unused import warnings in config, signal, and resources modules.
+- Fixed unused variable/assignment warnings in subsystem and resources modules.
+- Replaced manual `Default` implementations with `#[derive(Default)]` as suggested by clippy.
+- Fixed unchecked time subtraction using `checked_sub` in shutdown module.
+- Replaced `once_cell::sync::Lazy` with `std::sync::LazyLock` for high-res timing.
+- Simplified health check logic using `is_none_or` instead of `map_or`.
 - `ShutdownHandle::cancelled()` now short-circuits when shutdown has already been initiated on Tokio.
 - `SubsystemManager::stop_subsystem()` only reports readiness after task completion and supports async-std task joins.
 - Async-std Unix signal handling now registers SIGTERM/SIGINT/SIGQUIT/SIGHUP correctly via `signal-hook`.
