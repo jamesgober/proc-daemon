@@ -168,46 +168,57 @@ impl SignalHandler {
 
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     async fn handle_unix_signals_async_std(&self) -> Result<()> {
-        use std::time::Duration;
+        use futures::stream::StreamExt;
+        use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
+        use signal_hook_async_std::Signals;
 
-        // Use the signal-hook crate for safe signal handling
-        let term = async_std::channel::bounded::<()>(1);
-        let _int = async_std::channel::bounded::<i32>(1);
+        let mut signals = Signals::new([SIGTERM, SIGINT, SIGQUIT, SIGHUP])
+            .map_err(|e| Error::signal(format!("Failed to register Unix signal handlers: {e}")))?;
 
-        // Register signal handlers safely using ctrlc for SIGTERM (15)
-        let term_sender = term.0.clone();
-        ctrlc::set_handler(move || {
-            let _ = term_sender.try_send(());
-        })?;
+        info!("Unix signal handlers registered (SIGTERM, SIGINT, SIGQUIT, SIGHUP)");
 
-        info!("Unix signal handlers registered (SIGTERM, SIGINT)");
-
-        // Poll for signals
-        loop {
-            // Wait for signals with a timeout
-            let term_recv = term.1.clone();
-
-            match async_std::future::timeout(Duration::from_millis(100), term_recv.recv()).await {
-                Ok(Ok(())) => {
-                    info!("Received SIGTERM, initiating graceful shutdown");
-                    if self
-                        .shutdown_coordinator
-                        .initiate_shutdown(ShutdownReason::Signal(15))
-                    {
-                        break;
+        while self.is_handling() {
+            if let Some(signal) = signals.next().await {
+                match signal {
+                    SIGTERM => {
+                        info!("Received SIGTERM, initiating graceful shutdown");
+                        if self
+                            .shutdown_coordinator
+                            .initiate_shutdown(ShutdownReason::Signal(15))
+                        {
+                            break;
+                        }
                     }
-                }
-                _ => {
-                    // Timeout or error, check if we should stop handling
-                    if !self.is_handling() {
-                        debug!("Signal handling stopped by request");
-                        break;
+                    SIGINT => {
+                        info!("Received SIGINT (Ctrl+C), initiating graceful shutdown");
+                        if self
+                            .shutdown_coordinator
+                            .initiate_shutdown(ShutdownReason::Signal(2))
+                        {
+                            break;
+                        }
                     }
+                    SIGQUIT => {
+                        warn!("Received SIGQUIT, initiating immediate shutdown");
+                        if self
+                            .shutdown_coordinator
+                            .initiate_shutdown(ShutdownReason::Signal(3))
+                        {
+                            break;
+                        }
+                    }
+                    SIGHUP => {
+                        info!("Received SIGHUP, could be used for config reload (initiating shutdown for now)");
+                        if self
+                            .shutdown_coordinator
+                            .initiate_shutdown(ShutdownReason::Signal(1))
+                        {
+                            break;
+                        }
+                    }
+                    _ => {}
                 }
             }
-
-            // Brief sleep to prevent tight loop
-            async_std::task::sleep(Duration::from_millis(10)).await;
         }
 
         Ok(())
@@ -665,7 +676,7 @@ mod tests {
     async fn test_signal_handler_creation() {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
             let handler = SignalHandler::new(coordinator);
 
             assert!(!handler.is_handling());
@@ -683,7 +694,7 @@ mod tests {
     async fn test_signal_handler_creation() {
         // Add a test timeout to prevent freezing
         let test_result = async_std::future::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
             let handler = SignalHandler::new(coordinator);
 
             assert!(!handler.is_handling());
