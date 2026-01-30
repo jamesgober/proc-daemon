@@ -186,6 +186,7 @@ enum SignalHandlerKind {
 }
 
 impl SignalHandlerKind {
+    #[allow(dead_code)]
     async fn handle_signals(&self) -> Result<()> {
         match self {
             Self::Default(handler) => handler.handle_signals().await,

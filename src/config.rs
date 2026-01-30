@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use crate::error::{Error, Result};
 
+#[cfg(feature = "toml")]
 use std::fs;
 
 #[cfg(feature = "config-watch")]
@@ -23,7 +24,7 @@ use {
 };
 
 /// Log level configuration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     /// Trace level logging (most verbose)
@@ -31,17 +32,12 @@ pub enum LogLevel {
     /// Debug level logging
     Debug,
     /// Info level logging (default)
+    #[default]
     Info,
     /// Warning level logging
     Warn,
     /// Error level logging
     Error,
-}
-
-impl Default for LogLevel {
-    fn default() -> Self {
-        Self::Info
-    }
 }
 
 impl From<LogLevel> for tracing::Level {

@@ -130,7 +130,7 @@ impl ShutdownHandle {
                 Duration::from_millis(self.inner.graceful_timeout_ms.load(Ordering::Acquire));
 
             if elapsed < timeout {
-                Some(timeout - elapsed)
+                timeout.checked_sub(elapsed)
             } else {
                 None
             }

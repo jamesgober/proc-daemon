@@ -144,11 +144,10 @@ pub mod ipc;
 /// monotonically increasing clock via `quanta`.
 #[cfg(feature = "high-res-timing")]
 pub mod timing {
-    use once_cell::sync::Lazy;
     use quanta::Clock;
     pub use quanta::Instant;
 
-    static CLOCK: Lazy<Clock> = Lazy::new(Clock::new);
+    static CLOCK: std::sync::LazyLock<Clock> = std::sync::LazyLock::new(Clock::new);
 
     /// Returns a high-resolution Instant using a cached `quanta::Clock`.
     #[inline]
