@@ -154,7 +154,7 @@ async fn main() -> proc_daemon::Result<()> {
         });
     }
 
-    let mut builder = Daemon::builder(config);
+    let builder = Daemon::builder(config);
     #[cfg(feature = "lockfree-coordination")]
     {
         use proc_daemon::subsystem::SubsystemManager;

@@ -13,7 +13,7 @@ use std::time::Duration;
 #[ignore = "Task execution differs significantly between async-std and tokio runtimes"]
 async fn test_subsystem_execution_in_async_std() {
     // Create the coordinator and manager
-    let coordinator = ShutdownCoordinator::new(5000, 10000);
+    let coordinator = ShutdownCoordinator::new(5000, 10000, 5000);
     let manager = SubsystemManager::new(coordinator.clone());
 
     // Use shared state to track when our subsystem has executed
