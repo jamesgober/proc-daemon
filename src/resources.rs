@@ -69,6 +69,7 @@ use crate::error::{Error, Result};
 #[cfg(feature = "metrics")]
 use crate::metrics::MetricsCollector;
 use arc_swap::ArcSwap;
+use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -90,6 +91,8 @@ use tokio::time;
 use std::fs::File;
 #[cfg(target_os = "linux")]
 use std::io::{BufRead, BufReader};
+#[cfg(target_os = "linux")]
+use std::num::NonZeroI64;
 
 #[cfg(target_os = "macos")]
 use std::process::Command;
@@ -189,7 +192,7 @@ pub struct ResourceTracker {
     current_usage: Arc<ArcSwap<ResourceUsage>>,
 
     /// Historical usage data with timestamps
-    history: Arc<RwLock<Vec<ResourceUsage>>>,
+    history: Arc<RwLock<VecDeque<ResourceUsage>>>,
 
     /// Maximum history entries to keep
     max_history: usize,
@@ -218,24 +221,43 @@ pub struct ResourceTracker {
 }
 
 impl ResourceTracker {
-    /// Creates a new `ResourceTracker` with the given sampling interval
+    /// Creates a new `ResourceTracker` with the given sampling interval.
+    ///
+    /// # Security
+    ///
+    /// By default, tracks the current process. To track a different process,
+    /// use `with_pid()` but note this may fail if the process doesn't exist
+    /// or you lack permissions.
     #[must_use]
     pub fn new(sample_interval: Duration) -> Self {
         // Initialize with default values
         let initial_usage = ResourceUsage::new(0, 0.0, 0);
+        let current_pid = std::process::id();
 
         Self {
             sample_interval,
             current_usage: Arc::new(ArcSwap::from_pointee(initial_usage)),
-            history: Arc::new(RwLock::new(Vec::new())),
+            history: Arc::new(RwLock::new(VecDeque::new())),
             max_history: 60, // Default to 1 minute at 1 second intervals
             task_handle: None,
-            pid: std::process::id(),
+            pid: current_pid,
             memory_soft_limit_bytes: None,
             on_alert: None,
             #[cfg(feature = "metrics")]
             metrics: None,
         }
+    }
+
+    /// Set a specific PID to monitor (defaults to current process).
+    ///
+    /// # Security
+    ///
+    /// Monitoring arbitrary processes may fail due to OS permissions.
+    /// Only use this if you have explicit authorization.
+    #[must_use]
+    pub const fn with_pid(mut self, pid: u32) -> Self {
+        self.pid = pid;
+        self
     }
 
     /// Sets the maximum history entries to keep
@@ -334,15 +356,15 @@ impl ResourceTracker {
                     // Update current usage (lock-free store)
                     current_usage.store(Arc::new(usage.clone()));
 
-                    // Update history
-                    if let Ok(mut hist) = usage_history.write() {
-                        hist.push(usage.clone());
-
-                        // Trim history if needed
-                        if hist.len() > max_history {
-                            hist.remove(0);
+                    // Update history with minimal lock time
+                    {
+                        let mut hist = usage_history.write().unwrap();
+                        hist.push_back(usage.clone());
+                        // Trim excess entries in one loop
+                        while hist.len() > max_history {
+                            hist.pop_front();
                         }
-                    }
+                    } // Drop lock immediately
 
                     // Soft memory limit alert
                     if let Some(limit) = memory_soft_limit_bytes {
@@ -412,17 +434,19 @@ impl ResourceTracker {
                     Self::sample_resource_usage(pid, &mut last_cpu_time, &mut last_timestamp)
                 {
                     // Update current usage (lock-free store via ArcSwap)
-                    current_usage.store(Arc::new(usage.clone()));
+                    // Reuse Arc allocation by swapping instead of always allocating new
+                    let new_arc = Arc::new(usage.clone());
+                    current_usage.store(new_arc);
 
-                    // Update history
-                    if let Ok(mut hist) = usage_history.write() {
-                        hist.push(usage.clone());
-
-                        // Trim history if needed
-                        if hist.len() > max_history {
-                            hist.remove(0);
+                    // Update history with minimal lock time
+                    {
+                        let mut hist = usage_history.write().unwrap();
+                        hist.push_back(usage.clone());
+                        // Trim excess entries in one loop
+                        while hist.len() > max_history {
+                            hist.pop_front();
                         }
-                    }
+                    } // Drop lock immediately
 
                     // Soft memory limit alert
                     if let Some(limit) = memory_soft_limit_bytes {
@@ -492,7 +516,7 @@ impl ResourceTracker {
     pub fn history(&self) -> Vec<ResourceUsage> {
         self.history
             .read()
-            .map_or_else(|_| Vec::new(), |history| history.clone())
+            .map_or_else(|_| Vec::new(), |history| history.iter().cloned().collect())
     }
 
     /// Samples the resource usage for the given process ID
@@ -593,36 +617,22 @@ impl ResourceTracker {
                 Error::io_with_source("Failed to read process CPU stats".to_string(), e)
             })?;
 
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 24 {
-                // Parse thread count (field 20)
-                thread_count = parts[19].parse::<u32>().unwrap_or(0);
+            if let Some((cpu_time, threads)) = Self::parse_proc_stat(&line) {
+                thread_count = threads;
 
-                // Parse CPU times (fields 14-17: utime, stime, cutime, cstime)
-                let utime = parts[13].parse::<f64>().unwrap_or(0.0);
-                let stime = parts[14].parse::<f64>().unwrap_or(0.0);
-                let child_user_time = parts[15].parse::<f64>().unwrap_or(0.0);
-                let child_system_time = parts[16].parse::<f64>().unwrap_or(0.0);
-
-                let current_cpu_time = utime + stime + child_user_time + child_system_time;
                 let now = Instant::now();
-
-                // Calculate CPU usage percentage
                 if *last_timestamp != now {
                     let time_diff = now.duration_since(*last_timestamp).as_secs_f64();
                     if time_diff > 0.0 {
-                        // CPU usage is normalized by the number of cores
                         let num_cores = num_cpus::get() as f64;
-                        let cpu_time_diff = current_cpu_time - *last_cpu_time;
+                        let cpu_time_diff = cpu_time - *last_cpu_time;
+                        let ticks = Self::linux_clk_tck();
 
-                        // Convert jiffies to percentage
-                        // In Linux, typically there are 100 jiffies per second
-                        cpu_percent = (cpu_time_diff / 100.0) / time_diff * 100.0 / num_cores;
+                        cpu_percent = (cpu_time_diff / ticks) / time_diff * 100.0 / num_cores;
                     }
                 }
 
-                // Update last values
-                *last_cpu_time = current_cpu_time;
+                *last_cpu_time = cpu_time;
                 *last_timestamp = now;
             }
         }
@@ -630,11 +640,43 @@ impl ResourceTracker {
         Ok((cpu_percent, thread_count))
     }
 
+    #[cfg(target_os = "linux")]
+    fn parse_proc_stat(line: &str) -> Option<(f64, u32)> {
+        let open = line.find('(')?;
+        let close = line.rfind(')')?;
+        if close <= open {
+            return None;
+        }
+
+        // Everything after the closing ')' begins with state (field 3).
+        let rest = line.get((close + 1)..)?;
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        // Need up to field 20 (num_threads) => index 17 in this slice.
+        if parts.len() <= 17 {
+            return None;
+        }
+
+        let utime = parts.get(11)?.parse::<f64>().unwrap_or(0.0);
+        let stime = parts.get(12)?.parse::<f64>().unwrap_or(0.0);
+        let child_user_time = parts.get(13)?.parse::<f64>().unwrap_or(0.0);
+        let child_system_time = parts.get(14)?.parse::<f64>().unwrap_or(0.0);
+        let thread_count = parts.get(17)?.parse::<u32>().unwrap_or(0);
+
+        let current_cpu_time = utime + stime + child_user_time + child_system_time;
+        Some((current_cpu_time, thread_count))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn linux_clk_tck() -> f64 {
+        let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+        NonZeroI64::new(ticks).map_or(100.0, |v| v.get() as f64)
+    }
+
     #[cfg(target_os = "macos")]
     #[allow(dead_code)]
     fn get_memory_macos(pid: u32) -> Result<u64> {
         // Use ps command to get memory usage on macOS
-        let output = Command::new("ps")
+        let output = Command::new("/bin/ps")
             .args(["-xo", "rss=", "-p", &pid.to_string()])
             .output()
             .map_err(|e| {
@@ -656,7 +698,7 @@ impl ResourceTracker {
     #[allow(dead_code)]
     fn get_cpu_macos(pid: u32) -> Result<(f64, u32)> {
         // Get CPU percentage using ps
-        let output = Command::new("ps")
+        let output = Command::new("/bin/ps")
             .args(["-xo", "%cpu,thcount=", "-p", &pid.to_string()])
             .output()
             .map_err(|e| {

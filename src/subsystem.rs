@@ -9,7 +9,7 @@ use crate::error::{Error, Result};
 use crate::pool::{StringPool, VecPool};
 use crate::shutdown::{ShutdownCoordinator, ShutdownHandle};
 
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -165,14 +165,17 @@ struct SubsystemEntry {
     /// Task handle for the running subsystem
     #[cfg(feature = "tokio")]
     task_handle: Mutex<Option<tokio::task::JoinHandle<Result<()>>>>,
+    /// Task handle for the running subsystem (async-std)
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    task_handle: Mutex<Option<async_std::task::JoinHandle<Result<()>>>>,
     /// Shutdown handle for this subsystem
     shutdown_handle: ShutdownHandle,
 }
 
 /// Manager for coordinating multiple subsystems.
 pub struct SubsystemManager {
-    /// Registered subsystems
-    subsystems: Mutex<HashMap<SubsystemId, Arc<SubsystemEntry>>>,
+    /// Registered subsystems (lock-free concurrent access)
+    subsystems: Arc<DashMap<SubsystemId, Arc<SubsystemEntry>>>,
     /// Shutdown coordinator
     shutdown_coordinator: ShutdownCoordinator,
     /// Next subsystem ID
@@ -189,6 +192,8 @@ pub struct SubsystemManager {
     events_tx: Mutex<Option<coord::chan::Sender<SubsystemEvent>>>,
     /// Optional coordination channel receiver for consuming events
     events_rx: Mutex<Option<coord::chan::Receiver<SubsystemEvent>>>,
+    /// Cached subsystem names to avoid allocations (`Arc<str>` for zero-copy sharing)
+    name_cache: Arc<DashMap<SubsystemId, Arc<str>>>,
 }
 
 impl SubsystemManager {
@@ -196,7 +201,7 @@ impl SubsystemManager {
     #[must_use]
     pub fn new(shutdown_coordinator: ShutdownCoordinator) -> Self {
         Self {
-            subsystems: Mutex::new(HashMap::new()),
+            subsystems: Arc::new(DashMap::new()),
             shutdown_coordinator,
             next_id: AtomicU64::new(1),
             total_restarts: AtomicU64::new(0),
@@ -206,6 +211,7 @@ impl SubsystemManager {
             metadata_pool: VecPool::new(8, 32, 16), // 8 pre-allocated vectors, max 32, 16 items capacity each
             events_tx: Mutex::new(None),
             events_rx: Mutex::new(None),
+            name_cache: Arc::new(DashMap::new()),
         }
     }
 
@@ -244,21 +250,19 @@ impl SubsystemManager {
     /// Register a new subsystem with the manager.
     ///
     /// Returns a unique ID for the registered subsystem.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register<S: Subsystem>(&self, subsystem: S) -> SubsystemId {
         let id = self.next_id.fetch_add(1, Ordering::AcqRel);
-        // Use string pool to avoid allocation
-        let pooled_name = self.string_pool.get_with_value(subsystem.name());
-        let restart_policy = subsystem.restart_policy();
 
+        // Cache name as Arc<str> for zero-copy sharing
+        let name_arc: Arc<str> = Arc::from(subsystem.name());
+        self.name_cache.insert(id, Arc::clone(&name_arc));
+
+        let restart_policy = subsystem.restart_policy();
         let shutdown_handle = self.shutdown_coordinator.create_handle(subsystem.name());
+
         let metadata = SubsystemMetadata {
             id,
-            // Store the string directly from the pool
-            name: pooled_name.to_string(), // Will be optimized in next phase with string interning
+            name: name_arc.to_string(), // Convert Arc<str> to String for metadata
             state: SubsystemState::Starting,
             registered_at: Instant::now(),
             started_at: None,
@@ -273,12 +277,14 @@ impl SubsystemManager {
             subsystem: Arc::new(subsystem),
             #[cfg(feature = "tokio")]
             task_handle: Mutex::new(None),
+            #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+            task_handle: Mutex::new(None),
             shutdown_handle,
         });
 
-        self.subsystems.lock().unwrap().insert(id, entry);
+        self.subsystems.insert(id, entry);
 
-        info!(subsystem_id = id, subsystem_name = %pooled_name, "Registered subsystem");
+        info!(subsystem_id = id, subsystem_name = %name_arc, "Registered subsystem");
         id
     }
 
@@ -373,27 +379,28 @@ impl SubsystemManager {
 
     /// Start a specific subsystem.
     ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
-    ///
     /// # Errors
     ///
     /// Returns a `Error::subsystem` error if the subsystem with the specified ID is not found.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the metadata mutex is poisoned.
     #[instrument(skip(self), fields(subsystem_id = id))]
     pub async fn start_subsystem(&self, id: SubsystemId) -> Result<()> {
-        let entry = {
-            let subsystems = self.subsystems.lock().unwrap();
-            subsystems
-                .get(&id)
-                .ok_or_else(|| Error::subsystem("unknown", "Subsystem not found"))?
-                .clone()
-        };
+        let entry = self
+            .subsystems
+            .get(&id)
+            .ok_or_else(|| Error::subsystem("unknown", "Subsystem not found"))?
+            .clone();
+
+        // Get cached name (zero-copy)
+        let subsystem_name = self
+            .name_cache
+            .get(&id)
+            .map_or_else(|| Arc::from("unknown"), |n| n.clone());
 
         self.update_state(id, SubsystemState::Starting);
-
-        // Get the subsystem name directly
-        let subsystem_name = entry.subsystem.name().to_string();
 
         #[cfg(feature = "tokio")]
         {
@@ -402,9 +409,8 @@ impl SubsystemManager {
             let shutdown_handle = entry.shutdown_handle.clone();
             let entry_clone = Arc::clone(&entry);
             let id_clone = id;
-            // No need to clone the string pool here, remove this code
-            // Create a string clone that can be moved into the task
-            let subsystem_name_clone = entry.subsystem.name().to_string();
+            // Use cached name (zero-copy Arc<str>)
+            let subsystem_name_clone = Arc::clone(&subsystem_name);
 
             // Move everything required into the task, avoiding reference to self
             let task = tokio::spawn(async move {
@@ -413,18 +419,54 @@ impl SubsystemManager {
                 // Update state based on result
                 match &result {
                     Ok(()) => {
-                        entry_clone.metadata.lock().unwrap().state = SubsystemState::Stopped;
-                        entry_clone.metadata.lock().unwrap().stopped_at = Some(Instant::now());
+                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        metadata.state = SubsystemState::Stopped;
+                        metadata.stopped_at = Some(Instant::now());
+                        drop(metadata);
                         info!(subsystem_id = id_clone, subsystem_name = %subsystem_name_clone, "Subsystem stopped successfully");
                     }
                     Err(e) => {
-                        {
-                            let mut metadata = entry_clone.metadata.lock().unwrap();
-                            metadata.state = SubsystemState::Failed;
-                            // Store error directly as string without pooling to avoid borrowing issues
-                            metadata.last_error = Some(e.to_string());
-                            metadata.stopped_at = Some(Instant::now());
-                        }
+                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        metadata.state = SubsystemState::Failed;
+                        metadata.last_error = Some(e.to_string());
+                        metadata.stopped_at = Some(Instant::now());
+                        drop(metadata);
+                        error!(subsystem_id = id_clone, subsystem_name = %subsystem_name_clone, error = %e, "Subsystem failed");
+                    }
+                }
+
+                result
+            });
+
+            *entry.task_handle.lock().unwrap() = Some(task);
+        }
+
+        #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+        {
+            let subsystem = Arc::clone(&entry.subsystem);
+            let shutdown_handle = entry.shutdown_handle.clone();
+            let entry_clone = Arc::clone(&entry);
+            let id_clone = id;
+            // Use cached name (zero-copy Arc<str>)
+            let subsystem_name_clone = Arc::clone(&subsystem_name);
+
+            let task = async_std::task::spawn(async move {
+                let result: Result<()> = subsystem.run(shutdown_handle).await;
+
+                match &result {
+                    Ok(()) => {
+                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        metadata.state = SubsystemState::Stopped;
+                        metadata.stopped_at = Some(Instant::now());
+                        drop(metadata);
+                        info!(subsystem_id = id_clone, subsystem_name = %subsystem_name_clone, "Subsystem stopped successfully");
+                    }
+                    Err(e) => {
+                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        metadata.state = SubsystemState::Failed;
+                        metadata.last_error = Some(e.to_string());
+                        metadata.stopped_at = Some(Instant::now());
+                        drop(metadata);
                         error!(subsystem_id = id_clone, subsystem_name = %subsystem_name_clone, error = %e, "Subsystem failed");
                     }
                 }
@@ -449,80 +491,165 @@ impl SubsystemManager {
     ///
     /// # Errors
     ///
-    /// Returns a `Result<()>` that resolves to `Ok(())` even if individual subsystems fail to start.
-    /// Errors from individual subsystems will be logged but won't cause this method to return an error.
+    /// Returns a `Result<()>` that resolves to `Ok(())` only when all subsystems start successfully.
+    /// Errors from individual subsystems will be logged and the first failure is returned.
     pub async fn start_all(&self) -> Result<()> {
-        let subsystem_ids: Vec<SubsystemId> =
-            { self.subsystems.lock().unwrap().keys().copied().collect() };
+        let subsystem_ids: Vec<SubsystemId> = self.subsystems.iter().map(|r| *r.key()).collect();
 
         info!("Starting {} subsystems", subsystem_ids.len());
+
+        let mut first_error: Option<Error> = None;
 
         for id in subsystem_ids {
             if let Err(e) = self.start_subsystem(id).await {
                 error!(subsystem_id = id, error = %e, "Failed to start subsystem");
-                // Continue starting other subsystems even if one fails
+                if first_error.is_none() {
+                    first_error = Some(e);
+                }
             }
         }
 
-        Ok(())
+        first_error.map_or_else(|| Ok(()), Err)
     }
 
     /// Stop a specific subsystem gracefully.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     ///
     /// # Errors
     ///
     /// Returns a `Error::subsystem` error if the subsystem with the specified ID is not found.
     #[instrument(skip(self), fields(subsystem_id = id))]
     pub async fn stop_subsystem(&self, id: SubsystemId) -> Result<()> {
-        let entry = {
-            let subsystems = self.subsystems.lock().unwrap();
-            subsystems
-                .get(&id)
-                .ok_or_else(|| Error::subsystem("unknown", "Subsystem not found"))?
-                .clone()
-        };
+        let entry = self
+            .subsystems
+            .get(&id)
+            .ok_or_else(|| Error::subsystem("unknown", "Subsystem not found"))?
+            .clone();
 
-        // Get subsystem name for logging
-        #[allow(unused_variables)]
-        let subsystem_name = self.string_pool.get_with_value(entry.subsystem.name());
+        // Get cached subsystem name (zero-copy)
+        let subsystem_name = self
+            .name_cache
+            .get(&id)
+            .map_or_else(|| "unknown".to_string(), |n| n.to_string());
         self.update_state(id, SubsystemState::Stopping);
 
-        // Signal shutdown to the subsystem
-        entry.shutdown_handle.ready();
+        // Subsystems observe shutdown via the shared coordinator; readiness is reported on completion.
 
         #[cfg(feature = "tokio")]
         {
-            // Take task handle while minimizing lock scope
-            let task_handle_opt = {
-                let mut task_handle_guard = entry.task_handle.lock().unwrap();
-                task_handle_guard.take()
-            }; // MutexGuard dropped here before await
+            if self.stop_task_tokio(&entry, id, &subsystem_name).await {
+                entry.shutdown_handle.ready();
+                self.update_state_with_timestamp(
+                    id,
+                    SubsystemState::Stopped,
+                    None,
+                    Some(Instant::now()),
+                );
+            }
+        }
 
-            // Wait for the task to complete if it exists, with a timeout
-            if let Some(task_handle) = task_handle_opt {
-                match tokio::time::timeout(Duration::from_millis(500), task_handle).await {
-                    Ok(Ok(Ok(()))) => {
-                        info!(subsystem_id = id, subsystem_name = %subsystem_name, "Subsystem stopped gracefully");
+        #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+        {
+            if self.stop_task_async_std(&entry, id, &subsystem_name).await {
+                entry.shutdown_handle.ready();
+                self.update_state_with_timestamp(
+                    id,
+                    SubsystemState::Stopped,
+                    None,
+                    Some(Instant::now()),
+                );
+            }
+        }
+
+        #[cfg(not(any(feature = "tokio", feature = "async-std")))]
+        {
+            entry.shutdown_handle.ready();
+            self.update_state_with_timestamp(
+                id,
+                SubsystemState::Stopped,
+                None,
+                Some(Instant::now()),
+            );
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "tokio")]
+    async fn stop_task_tokio(
+        &self,
+        entry: &Arc<SubsystemEntry>,
+        id: SubsystemId,
+        subsystem_name: &str,
+    ) -> bool {
+        let task_handle_opt = {
+            let mut task_handle_guard = entry.task_handle.lock().unwrap();
+            task_handle_guard.take()
+        };
+
+        let mut completed = false;
+        if let Some(mut task_handle) = task_handle_opt {
+            let timeout = tokio::time::sleep(Duration::from_millis(500));
+            tokio::pin!(timeout);
+            tokio::select! {
+                result = &mut task_handle => {
+                    match result {
+                        Ok(Ok(())) => {
+                            info!(subsystem_id = id, subsystem_name = %subsystem_name, "Subsystem stopped gracefully");
+                            completed = true;
+                        }
+                        Ok(Err(e)) => {
+                            warn!(subsystem_id = id, subsystem_name = %subsystem_name, error = %e, "Subsystem stopped with error");
+                            completed = true;
+                        }
+                        Err(e) => {
+                            error!(subsystem_id = id, subsystem_name = %subsystem_name, error = %e, "Failed to join subsystem task");
+                            completed = true;
+                        }
                     }
-                    Ok(Ok(Err(e))) => {
-                        warn!(subsystem_id = id, subsystem_name = %subsystem_name, error = %e, "Subsystem stopped with error");
-                    }
-                    Ok(Err(e)) => {
-                        error!(subsystem_id = id, subsystem_name = %subsystem_name, error = %e, "Failed to join subsystem task");
-                    }
-                    Err(_) => {
-                        warn!(subsystem_id = id, subsystem_name = %subsystem_name, "Timed out waiting for subsystem task to complete, marking as stopped anyway");
-                    }
+                }
+                () = &mut timeout => {
+                    warn!(subsystem_id = id, subsystem_name = %subsystem_name, "Timed out waiting for subsystem task to complete, aborting task");
+                    task_handle.abort();
+                    let _ = task_handle.await;
+                    completed = true;
                 }
             }
         }
 
-        self.update_state_with_timestamp(id, SubsystemState::Stopped, None, Some(Instant::now()));
-        Ok(())
+        completed
+    }
+
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    async fn stop_task_async_std(
+        &self,
+        entry: &Arc<SubsystemEntry>,
+        id: SubsystemId,
+        subsystem_name: &str,
+    ) -> bool {
+        let task_handle_opt = {
+            let mut task_handle_guard = entry.task_handle.lock().unwrap();
+            task_handle_guard.take()
+        };
+
+        let mut completed = false;
+        if let Some(task_handle) = task_handle_opt {
+            match async_std::future::timeout(Duration::from_millis(500), task_handle).await {
+                Ok(Ok(())) => {
+                    info!(subsystem_id = id, subsystem_name = %subsystem_name, "Subsystem stopped gracefully");
+                    completed = true;
+                }
+                Ok(Err(e)) => {
+                    warn!(subsystem_id = id, subsystem_name = %subsystem_name, error = %e, "Subsystem stopped with error");
+                    completed = true;
+                }
+                Err(_) => {
+                    warn!(subsystem_id = id, subsystem_name = %subsystem_name, "Timed out waiting for subsystem task to complete, cancelling task");
+                    completed = true;
+                }
+            }
+        }
+
+        completed
     }
 
     /// Stop all subsystems gracefully.
@@ -536,8 +663,8 @@ impl SubsystemManager {
     /// Returns a `Result<()>` that resolves to `Ok(())` even if individual subsystems fail to stop.
     /// Errors from individual subsystems will be logged but won't cause this method to return an error.
     pub async fn stop_all(&self) -> Result<()> {
-        let subsystem_ids: Vec<SubsystemId> =
-            { self.subsystems.lock().unwrap().keys().copied().collect() };
+        // Lock-free iteration over DashMap
+        let subsystem_ids: Vec<SubsystemId> = self.subsystems.iter().map(|r| *r.key()).collect();
 
         info!("Stopping {} subsystems", subsystem_ids.len());
 
@@ -572,25 +699,26 @@ impl SubsystemManager {
 
     /// Restart a subsystem.
     ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
-    ///
     /// # Errors
     ///
     /// Returns a `Error::subsystem` error if the subsystem with the specified ID is not found.
     /// May also return any error that occurs during the start operation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the metadata mutex is poisoned.
     pub async fn restart_subsystem(&self, id: SubsystemId) -> Result<()> {
-        let entry = {
-            let subsystems = self.subsystems.lock().unwrap();
-            subsystems
-                .get(&id)
-                .ok_or_else(|| Error::subsystem("unknown", "Subsystem not found"))?
-                .clone()
-        };
+        let entry = self
+            .subsystems
+            .get(&id)
+            .ok_or_else(|| Error::subsystem("unknown", "Subsystem not found"))?
+            .clone();
 
-        // Use pooled string to avoid allocation
-        let subsystem_name = self.string_pool.get_with_value(entry.subsystem.name());
+        // Use cached name (zero-copy)
+        let subsystem_name = self
+            .name_cache
+            .get(&id)
+            .map_or_else(|| Arc::from("unknown"), |n| n.clone());
 
         // Increment restart count
         {
@@ -627,30 +755,21 @@ impl SubsystemManager {
     ///
     /// # Panics
     ///
-    /// Panics if the subsystem mutex is poisoned.
+    /// Panics if any metadata mutex is poisoned.
     pub fn get_stats(&self) -> SubsystemStats {
-        // Get necessary data while holding the lock
-        // Use the pooled vector instead of allocating
+        // Get necessary data using DashMap iteration (lock-free reads)
         let mut subsystem_metadata = self.metadata_pool.get();
-        let total_count;
 
-        {
-            let subsystems = self.subsystems.lock().unwrap();
-            total_count = subsystems.len();
+        // Pre-reserve capacity to avoid reallocations
+        let total_count = self.subsystems.len();
+        if subsystem_metadata.capacity() < total_count {
+            let additional = total_count - subsystem_metadata.capacity();
+            subsystem_metadata.reserve(additional);
+        }
 
-            // Pre-reserve capacity to avoid reallocations
-            // Check capacity first and store the needed additional capacity
-            let current_capacity = subsystem_metadata.capacity();
-            if current_capacity < total_count {
-                subsystem_metadata.reserve(total_count - current_capacity);
-            }
-
-            // Clone all metadata while holding the lock
-            for entry in subsystems.values() {
-                subsystem_metadata.push(entry.metadata.lock().unwrap().clone());
-            }
-
-            // Drop the lock early
+        // Clone all metadata without global lock
+        for entry in self.subsystems.iter() {
+            subsystem_metadata.push(entry.metadata.lock().unwrap().clone());
         }
 
         // Process data without holding the lock
@@ -692,14 +811,13 @@ impl SubsystemManager {
 
     /// Get metadata for a specific subsystem.
     ///
+    /// Returns `None` if the subsystem with the specified ID is not found.
+    ///
     /// # Panics
     ///
-    /// Panics if the subsystem mutex is poisoned.
-    ///
-    /// Returns `None` if the subsystem with the specified ID is not found.
+    /// Panics if the metadata mutex is poisoned.
     pub fn get_subsystem_metadata(&self, id: SubsystemId) -> Option<SubsystemMetadata> {
-        let subsystems = self.subsystems.lock().unwrap();
-        subsystems
+        self.subsystems
             .get(&id)
             .map(|entry| entry.metadata.lock().unwrap().clone())
     }
@@ -708,26 +826,22 @@ impl SubsystemManager {
     ///
     /// # Panics
     ///
-    /// Panics if the subsystem mutex is poisoned.
+    /// Panics if any metadata mutex is poisoned.
     pub fn get_all_metadata(&self) -> Vec<SubsystemMetadata> {
         // Use the pooled vector instead of allocating
         let mut metadata_list = self.metadata_pool.get();
 
-        {
-            let subsystems = self.subsystems.lock().unwrap();
+        // Pre-reserve capacity to avoid reallocations
+        let needed_capacity = self.subsystems.len();
+        if metadata_list.capacity() < needed_capacity {
+            let additional = needed_capacity - metadata_list.capacity();
+            metadata_list.reserve(additional);
+        }
 
-            // Pre-reserve capacity to avoid reallocations
-            let needed_capacity = subsystems.len();
-            let current_capacity = metadata_list.capacity();
-            if current_capacity < needed_capacity {
-                metadata_list.reserve(needed_capacity - current_capacity);
-            }
-
-            // Copy all metadata while holding the lock
-            for entry in subsystems.values() {
-                metadata_list.push(entry.metadata.lock().unwrap().clone());
-            }
-        } // Lock released here
+        // Copy all metadata without global lock
+        for entry in self.subsystems.iter() {
+            metadata_list.push(entry.metadata.lock().unwrap().clone());
+        }
 
         // Convert pooled vector to standard Vec before returning
         let result = metadata_list.iter().cloned().collect();
@@ -742,42 +856,34 @@ impl SubsystemManager {
     ///
     /// # Panics
     ///
-    /// Panics if the subsystem mutex is poisoned.
+    /// Panics if any metadata mutex is poisoned.
     pub fn run_health_checks(&self) -> Vec<(SubsystemId, String, bool)> {
-        // Collect the necessary information while minimizing lock scope
-        // Use pooled vector to avoid allocation
+        // Collect the necessary information using DashMap (lock-free reads)
         let mut subsystem_data = self.vec_pool.get();
 
-        {
-            let subsystems = self.subsystems.lock().unwrap();
+        // Pre-reserve capacity to avoid reallocations
+        let needed_capacity = self.subsystems.len();
+        if subsystem_data.capacity() < needed_capacity {
+            let additional = needed_capacity - subsystem_data.capacity();
+            subsystem_data.reserve(additional);
+        }
 
-            // Pre-reserve capacity to avoid reallocations
-            let needed_capacity = subsystems.len();
-            let current_capacity = subsystem_data.capacity();
-            if current_capacity < needed_capacity {
-                subsystem_data.reserve(needed_capacity - current_capacity);
-            }
+        // Gather data without global lock
+        for entry_ref in self.subsystems.iter() {
+            let id = *entry_ref.key();
+            let entry = entry_ref.value();
+            let state = entry.metadata.lock().unwrap().state;
 
-            // Gather data
-            for (id, entry) in subsystems.iter() {
-                let state = entry.metadata.lock().unwrap().state;
-                subsystem_data.push((
-                    *id,
-                    // Use the string pool to avoid allocation
-                    // Cache name lookup to reuse the same pooled string
-                    {
-                        let name = entry.subsystem.name();
-                        let pooled = self.string_pool.get_with_value(name);
-                        // Still need to clone but using pre-pooled string reduces allocation overhead
-                        pooled.to_string()
-                    },
-                    state,
-                    Arc::clone(&entry.subsystem),
-                ));
-            }
-        } // Lock released here
+            // Use cached name (zero-copy)
+            let name = self
+                .name_cache
+                .get(&id)
+                .map_or_else(|| "unknown".to_string(), |n| n.to_string());
 
-        // Create result vector with capacity to avoid reallocation
+            subsystem_data.push((id, name, state, Arc::clone(&entry.subsystem)));
+        }
+
+        // Create result vector with exact capacity to avoid reallocation
         let mut result = Vec::with_capacity(subsystem_data.len());
 
         // Now perform health checks without holding any locks
@@ -818,11 +924,8 @@ impl SubsystemManager {
     /// Panics if the metadata mutex is poisoned.
     #[allow(dead_code)]
     fn update_state_with_error(&self, id: SubsystemId, new_state: SubsystemState, error: String) {
-        // Acquire lock only for the scope we need it
-        let entry_opt = {
-            let subsystems = self.subsystems.lock().unwrap();
-            subsystems.get(&id).cloned()
-        };
+        // Get entry from DashMap (lock-free)
+        let entry_opt = self.subsystems.get(&id).map(|r| r.clone());
 
         // Update metadata if entry exists
         if let Some(entry) = entry_opt {
@@ -836,10 +939,6 @@ impl SubsystemManager {
     }
 
     /// Update the state of a subsystem with timestamps.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     fn update_state_with_timestamp(
         &self,
         id: SubsystemId,
@@ -847,14 +946,8 @@ impl SubsystemManager {
         started_at: Option<Instant>,
         stopped_at: Option<Instant>,
     ) {
-        // Acquire lock only for the scope we need it
-        let entry_opt = {
-            let subsystems = self.subsystems.lock().unwrap();
-            subsystems.get(&id).cloned()
-        };
-
-        // Update metadata if entry exists
-        if let Some(entry) = entry_opt {
+        // Get entry without global lock
+        if let Some(entry) = self.subsystems.get(&id) {
             let mut metadata = entry.metadata.lock().unwrap();
             metadata.state = new_state;
             if let Some(started) = started_at {
@@ -863,12 +956,15 @@ impl SubsystemManager {
             if let Some(stopped) = stopped_at {
                 metadata.stopped_at = Some(stopped);
             }
+            let event_data = (id, metadata.name.clone(), metadata.state, Instant::now());
+            drop(metadata);
+
             // Emit coordination event if enabled
             self.publish_event(SubsystemEvent::StateChanged {
-                id,
-                name: metadata.name.clone(),
-                state: metadata.state,
-                at: Instant::now(),
+                id: event_data.0,
+                name: event_data.1,
+                state: event_data.2,
+                at: event_data.3,
             });
         }
     }
@@ -936,7 +1032,7 @@ impl SubsystemManager {
 impl Clone for SubsystemManager {
     fn clone(&self) -> Self {
         Self {
-            subsystems: Mutex::new(HashMap::new()), // Fresh manager with no subsystems
+            subsystems: Arc::new(DashMap::new()), // Fresh manager with no subsystems
             shutdown_coordinator: self.shutdown_coordinator.clone(),
             next_id: AtomicU64::new(self.next_id.load(Ordering::Acquire)),
             total_restarts: AtomicU64::new(0),
@@ -946,6 +1042,7 @@ impl Clone for SubsystemManager {
             metadata_pool: VecPool::new(8, 32, 16),
             events_tx: Mutex::new(None),
             events_rx: Mutex::new(None),
+            name_cache: Arc::new(DashMap::new()),
         }
     }
 }
@@ -1036,7 +1133,7 @@ mod tests {
     async fn test_subsystem_registration() {
         // Add a test timeout to prevent the test from hanging
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
             let manager = SubsystemManager::new(coordinator);
 
             let subsystem = TestSubsystem::new("test", false);
@@ -1060,7 +1157,7 @@ mod tests {
     async fn test_subsystem_registration() {
         // Add a test timeout to prevent the test from hanging
         let test_result = async_std::future::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
             let manager = SubsystemManager::new(coordinator);
 
             let subsystem = TestSubsystem::new("test", false);
@@ -1086,7 +1183,7 @@ mod tests {
         // Add a test timeout to prevent the test from hanging
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             // Use shorter shutdown timeouts for tests
-            let coordinator = ShutdownCoordinator::new(500, 1000);
+            let coordinator = ShutdownCoordinator::new(500, 1000, 1500);
             let manager = SubsystemManager::new(coordinator);
 
             // Create a subsystem with faster response cycles
@@ -1124,7 +1221,7 @@ mod tests {
         // Add a test timeout to prevent the test from hanging
         let test_result = async_std::future::timeout(Duration::from_secs(5), async {
             // Use shorter shutdown timeouts for tests
-            let coordinator = ShutdownCoordinator::new(500, 1000);
+            let coordinator = ShutdownCoordinator::new(500, 1000, 1500);
             let manager = SubsystemManager::new(coordinator);
 
             // Create a subsystem with faster response cycles
@@ -1163,7 +1260,7 @@ mod tests {
     async fn test_subsystem_failure() {
         // Add a test timeout to prevent the test from hanging
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
             let manager = SubsystemManager::new(coordinator);
 
             let subsystem = TestSubsystem::new("failing", true);
@@ -1195,7 +1292,7 @@ mod tests {
         // failure propagation mechanism.
 
         // This is a placeholder test to maintain API parity with the tokio version.
-        let coordinator = ShutdownCoordinator::new(5000, 10000);
+        let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
         let _manager = SubsystemManager::new(coordinator);
 
         // Test passes by being ignored
@@ -1220,7 +1317,7 @@ mod tests {
         // Add a test timeout to prevent the test from hanging
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             // Use shorter timeouts for tests
-            let coordinator = ShutdownCoordinator::new(500, 1000);
+            let coordinator = ShutdownCoordinator::new(500, 1000, 1500);
             let manager = SubsystemManager::new(coordinator);
 
             // Create a closure-based subsystem with faster response to shutdown
@@ -1286,7 +1383,7 @@ mod tests {
         // Add a test timeout to prevent the test from hanging
         let test_result = async_std::future::timeout(Duration::from_secs(5), async {
             // Use shorter timeouts for tests
-            let coordinator = ShutdownCoordinator::new(500, 1000);
+            let coordinator = ShutdownCoordinator::new(500, 1000, 1500);
             let manager = SubsystemManager::new(coordinator);
 
             // For async-std, use the regular test subsystem instead of a closure-based one

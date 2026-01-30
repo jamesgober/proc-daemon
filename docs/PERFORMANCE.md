@@ -12,13 +12,13 @@
 
 [Home](../README.md) 
 
-Typical performance characteristics (Criterion, release, v0.9.0):
-- **Daemon Creation**: ~9.0μs per init
-- **Subsystem Registration** (3 tasks): ~12.9μs per build
-- **Config Build**: ~234ns per build
-- **Shutdown Coordination** (single quick task): ~10.2μs per cycle
-- **Error Creation**: ~71.7ns per error
-- **Error Chain Construction**: ~539ns per chain
+Typical performance characteristics (Criterion, release, v1.0.0-rc.1):
+- **Daemon Creation**: ~1.87μs per init
+- **Subsystem Registration** (3 tasks): ~3.37μs per build
+- **Config Build**: ~92ns per build
+- **Shutdown Coordination** (single quick task): ~2.56μs per cycle
+- **Error Creation**: ~22.8ns per error
+- **Error Chain Construction**: ~56.7ns per chain
 
 ### Memory Usage
 
@@ -32,12 +32,12 @@ Typical performance characteristics (Criterion, release, v0.9.0):
 
 | Metric | Result (median) | Comparison | Improvement |
 |--------|------------------|------------|-------------|
-| Daemon creation | 9.0 μs | — | — |
-| Subsystem registration (3 tasks) | 12.9 μs | — | — |
-| Config build | 234 ns | — | — |
-| Shutdown coordination (1 task) | 10.2 μs | — | — |
-| Error creation | 71.7 ns | — | — |
-| Error cause chain | 539 ns | — | — |
+| Daemon creation | 1.87 μs | 9.0 μs (v0.9.0) | ≈79% faster |
+| Subsystem registration (3 tasks) | 3.37 μs | 12.9 μs (v0.9.0) | ≈74% faster |
+| Config build | 92.1 ns | 234 ns (v0.9.0) | ≈61% faster |
+| Shutdown coordination (1 task) | 2.56 μs | 10.2 μs (v0.9.0) | ≈75% faster |
+| Error creation | 22.8 ns | 71.7 ns (v0.9.0) | ≈68% faster |
+| Error cause chain | 56.7 ns | 539 ns (v0.9.0) | ≈90% faster |
 
 
 <br>
@@ -48,6 +48,7 @@ Results generated with Criterion, default configuration, Tokio runtime, no metri
 
 | Version | Date | Daemon create | Subsystem reg (3) | Config build | Shutdown (1 task) | Error create | Error chain |
 |---------|------|---------------|-------------------|--------------|-------------------|--------------|-------------|
+| 1.0.0-rc.1 | 2026-01-30 | 1.87 μs | 3.37 μs | 92.1 ns | 2.56 μs | 22.8 ns | 56.7 ns |
 | 0.9.0 | 2025-08-26 | 9.0 μs | 12.9 μs | 234 ns | 10.2 μs | 71.7 ns | 539 ns |
 
 

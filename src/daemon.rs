@@ -5,6 +5,8 @@
 //! flexible configuration while maintaining zero-copy performance characteristics.
 
 use std::future::Future;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, instrument, warn};
@@ -12,7 +14,7 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::shutdown::{ShutdownCoordinator, ShutdownReason};
-use crate::signal::{SignalConfig, SignalHandler};
+use crate::signal::{ConfigurableSignalHandler, SignalConfig, SignalHandler};
 use crate::subsystem::{Subsystem, SubsystemId, SubsystemManager};
 
 #[cfg(feature = "config-watch")]
@@ -35,12 +37,168 @@ pub struct Daemon {
     /// Subsystem management
     subsystem_manager: SubsystemManager,
     /// Signal handling
-    signal_handler: Option<Arc<SignalHandler>>,
+    signal_handler: Option<SignalHandlerKind>,
     /// Keep the config watcher alive (when enabled)
     #[cfg(feature = "config-watch")]
     _config_watcher: Option<RecommendedWatcher>,
     /// Start time
     started_at: Option<Instant>,
+}
+
+struct PidFileGuard {
+    path: PathBuf,
+}
+
+impl PidFileGuard {
+    fn create(path: &Path) -> Result<Self> {
+        let pid = std::process::id();
+        let mut file = std::fs::File::create(path).map_err(|e| {
+            Error::io_with_source(
+                format!("Failed to create PID file at {}", path.display()),
+                e,
+            )
+        })?;
+        writeln!(file, "{pid}").map_err(|e| {
+            Error::io_with_source(format!("Failed to write PID file at {}", path.display()), e)
+        })?;
+        Ok(Self {
+            path: path.to_path_buf(),
+        })
+    }
+}
+
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+struct RotatingFileWriterInner {
+    file: std::fs::File,
+    path: PathBuf,
+    max_size: u64,
+    max_files: u32,
+    size: u64,
+}
+
+#[derive(Clone)]
+struct RotatingFileWriter {
+    inner: Arc<std::sync::Mutex<RotatingFileWriterInner>>,
+}
+
+impl RotatingFileWriter {
+    fn new(path: PathBuf, max_size: Option<u64>, max_files: Option<u32>) -> io::Result<Self> {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+
+        let max_size = max_size.unwrap_or(u64::MAX);
+        let max_files = max_files.unwrap_or(0);
+
+        Ok(Self {
+            inner: Arc::new(std::sync::Mutex::new(RotatingFileWriterInner {
+                file,
+                path,
+                max_size,
+                max_files,
+                size,
+            })),
+        })
+    }
+
+    fn rotate_locked(inner: &mut RotatingFileWriterInner) -> io::Result<()> {
+        if inner.max_files == 0 {
+            return Ok(());
+        }
+
+        for idx in (1..=inner.max_files).rev() {
+            let from = Self::rotated_path(&inner.path, idx - 1);
+            let to = Self::rotated_path(&inner.path, idx);
+            if from.exists() {
+                let _ = std::fs::remove_file(&to);
+                std::fs::rename(&from, &to)?;
+            }
+        }
+        inner.file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&inner.path)?;
+        inner.size = 0;
+        Ok(())
+    }
+
+    fn rotated_path(path: &Path, idx: u32) -> PathBuf {
+        if idx == 0 {
+            return path.to_path_buf();
+        }
+        PathBuf::from(format!("{}.{}", path.display(), idx))
+    }
+}
+
+struct RotatingFileWriterGuard {
+    inner: Arc<std::sync::Mutex<RotatingFileWriterInner>>,
+}
+
+impl io::Write for RotatingFileWriterGuard {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| io::Error::other("rotating log writer mutex poisoned"))?;
+
+        if inner.size.saturating_add(buf.len() as u64) > inner.max_size {
+            RotatingFileWriter::rotate_locked(&mut inner)?;
+        }
+
+        let written = inner.file.write(buf)?;
+        inner.size = inner.size.saturating_add(written as u64);
+        drop(inner);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| io::Error::other("rotating log writer mutex poisoned"))?;
+        let result = inner.file.flush();
+        drop(inner);
+        result
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::writer::MakeWriter<'a> for RotatingFileWriter {
+    type Writer = RotatingFileWriterGuard;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        RotatingFileWriterGuard {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum SignalHandlerKind {
+    Default(Arc<SignalHandler>),
+    Configurable(Arc<ConfigurableSignalHandler>),
+}
+
+impl SignalHandlerKind {
+    async fn handle_signals(&self) -> Result<()> {
+        match self {
+            Self::Default(handler) => handler.handle_signals().await,
+            Self::Configurable(handler) => handler.handle_signals().await,
+        }
+    }
+
+    fn stop(&self) {
+        match self {
+            Self::Default(handler) => handler.stop(),
+            Self::Configurable(handler) => handler.stop(),
+        }
+    }
 }
 
 impl Daemon {
@@ -72,11 +230,25 @@ impl Daemon {
         info!(daemon_name = %self.config.name, "Starting daemon");
         self.started_at = Some(Instant::now());
 
+        // Apply working directory before initializing logging or PID files
+        if let Some(work_dir) = &self.config.work_dir {
+            std::env::set_current_dir(work_dir).map_err(|e| {
+                Error::io_with_source(
+                    format!("Failed to set working directory to {}", work_dir.display()),
+                    e,
+                )
+            })?;
+        }
+
+        // Write PID file if configured
+        let _pid_guard = if let Some(pid_file) = &self.config.pid_file {
+            Some(PidFileGuard::create(pid_file)?)
+        } else {
+            None
+        };
+
         // Initialize logging
         self.init_logging()?;
-
-        // Validate configuration
-        self.config.validate()?;
 
         // Apply optional scheduler hints (no-op placeholders for future tuning)
         #[cfg(feature = "scheduler-hints")]
@@ -95,7 +267,7 @@ impl Daemon {
         // Only spawn when a supported async runtime is enabled.
         #[cfg(any(feature = "tokio", feature = "async-std"))]
         let signal_task = self.signal_handler.as_ref().map(|signal_handler| {
-            let handler = Arc::clone(signal_handler);
+            let handler = signal_handler.clone();
             Self::spawn_signal_handler(handler)
         });
 
@@ -114,15 +286,17 @@ impl Daemon {
             // Check subsystem health periodically
             if self.config.monitoring.health_checks {
                 let health_results = self.subsystem_manager.run_health_checks();
-                let unhealthy: Vec<_> = health_results
-                    .iter()
-                    .filter(|(_, _, healthy)| !healthy)
-                    .map(|(id, name, _)| (id, name))
-                    .collect();
-
-                if !unhealthy.is_empty() {
-                    warn!("Unhealthy subsystems detected: {:?}", unhealthy);
-                    // Could implement auto-restart logic here
+                // Early exit on first unhealthy subsystem to avoid allocations
+                let mut found_unhealthy = false;
+                for (id, name, healthy) in &health_results {
+                    if !healthy {
+                        if !found_unhealthy {
+                            warn!("Unhealthy subsystems detected:");
+                            found_unhealthy = true;
+                        }
+                        warn!(subsystem_id = id, subsystem_name = %name, "Unhealthy subsystem");
+                        // Could implement auto-restart logic here
+                    }
                 }
             }
 
@@ -132,6 +306,9 @@ impl Daemon {
 
             #[cfg(all(feature = "async-std", not(feature = "tokio")))]
             async_std::task::sleep(self.config.health_check_interval()).await;
+
+            #[cfg(not(any(feature = "tokio", feature = "async-std")))]
+            std::thread::sleep(self.config.health_check_interval());
         }
 
         // Graceful shutdown sequence
@@ -171,7 +348,12 @@ impl Daemon {
 
             // Wait for force shutdown timeout
             if let Err(e) = self.shutdown_coordinator.wait_for_force_shutdown().await {
-                error!(error = %e, "Force shutdown timeout exceeded, exiting immediately");
+                error!(error = %e, "Force shutdown timeout exceeded");
+            }
+
+            // Wait for kill shutdown timeout
+            if let Err(e) = self.shutdown_coordinator.wait_for_kill_shutdown().await {
+                error!(error = %e, "Kill shutdown timeout exceeded, exiting immediately");
             }
         }
 
@@ -184,10 +366,37 @@ impl Daemon {
     /// Initialize the logging system based on configuration.
     fn init_logging(&self) -> Result<()> {
         use tracing_subscriber::fmt::format::FmtSpan;
+        use tracing_subscriber::fmt::writer::BoxMakeWriter;
         use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
         let level: tracing::Level = self.config.logging.level.into();
         let filter = EnvFilter::from_default_env().add_directive(level.into());
+
+        // Configure output writer
+        let writer = if let Some(path) = &self.config.logging.file {
+            Some(
+                RotatingFileWriter::new(
+                    path.clone(),
+                    self.config.logging.max_file_size,
+                    self.config.logging.max_files,
+                )
+                .map_err(|e| {
+                    Error::io_with_source(
+                        format!("Failed to initialize log file at {}", path.display()),
+                        e,
+                    )
+                })?,
+            )
+        } else {
+            None
+        };
+
+        let make_writer = |writer: &Option<RotatingFileWriter>| {
+            writer.as_ref().map_or_else(
+                || BoxMakeWriter::new(std::io::stdout),
+                |writer| BoxMakeWriter::new(writer.clone()),
+            )
+        };
 
         // Configure output format
         if self.config.is_json_logging() {
@@ -198,7 +407,8 @@ impl Daemon {
                     .with_span_events(FmtSpan::CLOSE)
                     .with_target(true)
                     .with_thread_ids(true)
-                    .with_thread_names(true);
+                    .with_thread_names(true)
+                    .with_writer(make_writer(&writer));
 
                 let json_subscriber = base_subscriber
                     .json()
@@ -226,7 +436,8 @@ impl Daemon {
             .with_span_events(FmtSpan::CLOSE)
             .with_target(true)
             .with_thread_ids(true)
-            .with_thread_names(true);
+            .with_thread_names(true)
+            .with_writer(make_writer(&writer));
 
         let regular_subscriber = base_subscriber
             .with_ansi(self.config.is_colored_logging())
@@ -244,14 +455,12 @@ impl Daemon {
 
     /// Spawn the signal handler task.
     #[cfg(feature = "tokio")]
-    fn spawn_signal_handler(handler: Arc<SignalHandler>) -> tokio::task::JoinHandle<Result<()>> {
+    fn spawn_signal_handler(handler: SignalHandlerKind) -> tokio::task::JoinHandle<Result<()>> {
         tokio::spawn(async move { handler.handle_signals().await })
     }
 
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-    fn spawn_signal_handler(
-        handler: Arc<SignalHandler>,
-    ) -> async_std::task::JoinHandle<Result<()>> {
+    fn spawn_signal_handler(handler: SignalHandlerKind) -> async_std::task::JoinHandle<Result<()>> {
         async_std::task::spawn(async move { handler.handle_signals().await })
     }
 
@@ -336,6 +545,7 @@ pub struct DaemonBuilder {
     subsystems: Vec<SubsystemRegistrationFn>,
     signal_config: Option<SignalConfig>,
     enable_signals: bool,
+    config_path: Option<PathBuf>,
 }
 
 impl DaemonBuilder {
@@ -348,6 +558,7 @@ impl DaemonBuilder {
             subsystems: Vec::with_capacity(16),
             signal_config: None,
             enable_signals: true,
+            config_path: None,
         }
     }
 
@@ -355,6 +566,13 @@ impl DaemonBuilder {
     #[must_use]
     pub fn with_signal_config(mut self, config: SignalConfig) -> Self {
         self.signal_config = Some(config);
+        self
+    }
+
+    /// Override the configuration file path used for hot-reload.
+    #[must_use]
+    pub fn with_config_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.config_path = Some(path.into());
         self
     }
 
@@ -465,8 +683,11 @@ impl DaemonBuilder {
         self.config.validate()?;
 
         // Create shutdown coordinator
-        let shutdown_coordinator =
-            ShutdownCoordinator::new(self.config.shutdown.force, self.config.shutdown.kill);
+        let shutdown_coordinator = ShutdownCoordinator::new(
+            self.config.shutdown.graceful,
+            self.config.shutdown.force,
+            self.config.shutdown.kill,
+        );
 
         // Create subsystem manager
         let subsystem_manager = SubsystemManager::new(shutdown_coordinator.clone());
@@ -479,7 +700,18 @@ impl DaemonBuilder {
 
         // Create signal handler if enabled
         let signal_handler = if self.enable_signals {
-            Some(Arc::new(SignalHandler::new(shutdown_coordinator.clone())))
+            self.signal_config.clone().map_or_else(
+                || {
+                    Some(SignalHandlerKind::Default(Arc::new(SignalHandler::new(
+                        shutdown_coordinator.clone(),
+                    ))))
+                },
+                |config| {
+                    Some(SignalHandlerKind::Configurable(Arc::new(
+                        ConfigurableSignalHandler::new(shutdown_coordinator.clone(), config),
+                    )))
+                },
+            )
         } else {
             None
         };
@@ -498,12 +730,24 @@ impl DaemonBuilder {
         {
             if config_arc.hot_reload {
                 let swap = Arc::clone(&config_shared);
-                match Config::watch_file(crate::DEFAULT_CONFIG_FILE, move |res| match res {
+                let watch_path = self
+                    .config_path
+                    .or_else(|| {
+                        config_arc
+                            .work_dir
+                            .as_ref()
+                            .map(|d| d.join(crate::DEFAULT_CONFIG_FILE))
+                    })
+                    .unwrap_or_else(|| PathBuf::from(crate::DEFAULT_CONFIG_FILE));
+
+                let watch_path_for_cb = watch_path.clone();
+
+                match Config::watch_file(&watch_path, move |res| match res {
                     Ok(new_cfg) => {
                         swap.store(Arc::new(new_cfg));
                         info!(
                             "Configuration hot-reloaded from {}",
-                            crate::DEFAULT_CONFIG_FILE
+                            watch_path_for_cb.display()
                         );
                     }
                     Err(e) => {
@@ -512,7 +756,7 @@ impl DaemonBuilder {
                 }) {
                     Ok(w) => {
                         config_watcher = Some(w);
-                        info!("Config watcher started for {}", crate::DEFAULT_CONFIG_FILE);
+                        info!("Config watcher started for {}", watch_path.display());
                     }
                     Err(e) => {
                         warn!(error = %e, "Failed to start config watcher; continuing without hot-reload");

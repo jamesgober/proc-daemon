@@ -5,7 +5,7 @@
 
 use crate::pool::StringPool;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -89,11 +89,14 @@ impl MetricsSnapshot {
 struct MetricsInner {
     counters: RwLock<HashMap<String, AtomicU64>>,
     gauges: RwLock<HashMap<String, AtomicU64>>,
-    histograms: RwLock<HashMap<String, Vec<Duration>>>,
+    histograms: RwLock<HashMap<String, VecDeque<Duration>>>,
+    max_histogram_samples: usize,
     start_time: Instant,
 }
 
 impl MetricsCollector {
+    const DEFAULT_MAX_HISTOGRAM_SAMPLES: usize = 2048;
+
     /// Create a new metrics collector.
     #[must_use]
     pub fn new() -> Self {
@@ -102,6 +105,7 @@ impl MetricsCollector {
                 counters: RwLock::new(HashMap::new()),
                 gauges: RwLock::new(HashMap::new()),
                 histograms: RwLock::new(HashMap::new()),
+                max_histogram_samples: Self::DEFAULT_MAX_HISTOGRAM_SAMPLES,
                 start_time: Instant::now(),
             }),
             // Create a string pool optimized for metric names (typically short strings)
@@ -111,36 +115,40 @@ impl MetricsCollector {
 
     /// Increment a counter by the given value.
     pub fn increment_counter(&self, name: &str, value: u64) {
+        // Fast path: try read lock first
         let counters = self.inner.counters.read();
         if let Some(counter) = counters.get(name) {
-            counter.fetch_add(value, Ordering::AcqRel);
-        } else {
-            drop(counters);
-            // Use string pool to avoid allocation
-            let pooled_name = self.string_pool.get_with_value(name);
-            let mut counters = self.inner.counters.write();
-            counters
-                .entry(pooled_name.to_string())
-                .or_insert_with(|| AtomicU64::new(0))
-                .fetch_add(value, Ordering::AcqRel);
+            counter.fetch_add(value, Ordering::Release);
+            return;
         }
+        drop(counters);
+
+        // Slow path: need to create metric (happens once per unique metric)
+        let pooled_name = self.string_pool.get_with_value(name);
+        let mut counters = self.inner.counters.write();
+        counters
+            .entry(pooled_name.to_string())
+            .or_insert_with(|| AtomicU64::new(0))
+            .fetch_add(value, Ordering::Release);
     }
 
     /// Set a gauge to the given value.
     pub fn set_gauge(&self, name: &str, value: u64) {
+        // Fast path: try read lock first
         let gauges = self.inner.gauges.read();
         if let Some(gauge) = gauges.get(name) {
-            gauge.store(value, Ordering::Release);
-        } else {
-            drop(gauges);
-            // Use string pool to avoid allocation
-            let pooled_name = self.string_pool.get_with_value(name);
-            let mut gauges = self.inner.gauges.write();
-            gauges
-                .entry(pooled_name.to_string())
-                .or_insert_with(|| AtomicU64::new(0))
-                .store(value, Ordering::Release);
+            gauge.store(value, Ordering::Relaxed);
+            return;
         }
+        drop(gauges);
+
+        // Slow path: need to create metric (happens once per unique metric)
+        let pooled_name = self.string_pool.get_with_value(name);
+        let mut gauges = self.inner.gauges.write();
+        gauges
+            .entry(pooled_name.to_string())
+            .or_insert_with(|| AtomicU64::new(0))
+            .store(value, Ordering::Relaxed);
     }
 
     /// Record a histogram value.
@@ -148,10 +156,16 @@ impl MetricsCollector {
         // Use string pool to avoid allocation
         let pooled_name = self.string_pool.get_with_value(name);
         let mut histograms = self.inner.histograms.write();
-        histograms
+        let max_samples = self.inner.max_histogram_samples;
+        let entry = histograms
             .entry(pooled_name.to_string())
-            .or_insert_with(|| Vec::with_capacity(64)) // Pre-allocate vector to avoid frequent reallocations
-            .push(duration);
+            .or_insert_with(|| VecDeque::with_capacity(64));
+
+        if entry.len() >= max_samples {
+            let _ = entry.pop_front();
+        }
+        entry.push_back(duration);
+        drop(histograms);
     }
 
     /// Get current metric values.
@@ -162,7 +176,7 @@ impl MetricsCollector {
             .counters
             .read()
             .iter()
-            .map(|(k, v)| (k.clone(), v.load(Ordering::Acquire)))
+            .map(|(k, v)| (k.clone(), v.load(Ordering::Relaxed)))
             .collect();
 
         let gauges: HashMap<String, u64> = self
@@ -170,10 +184,16 @@ impl MetricsCollector {
             .gauges
             .read()
             .iter()
-            .map(|(k, v)| (k.clone(), v.load(Ordering::Acquire)))
+            .map(|(k, v)| (k.clone(), v.load(Ordering::Relaxed)))
             .collect();
 
-        let histograms: HashMap<String, Vec<Duration>> = self.inner.histograms.read().clone();
+        let histograms: HashMap<String, Vec<Duration>> = self
+            .inner
+            .histograms
+            .read()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.iter().copied().collect()))
+            .collect();
 
         MetricsSnapshot {
             uptime: self.inner.start_time.elapsed(),

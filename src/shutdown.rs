@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::error::{Error, Result};
 
@@ -65,10 +65,18 @@ impl ShutdownHandle {
     /// Wait for shutdown to be initiated.
     /// This is the primary method subsystems should use in their main loops.
     pub async fn cancelled(&mut self) {
+        // Fast path: check with relaxed ordering first (common case: not shutdown)
+        if self.inner.shutdown_initiated.load(Ordering::Relaxed) {
+            return;
+        }
+
         // Use tokio or async-std depending on feature flags
         #[cfg(feature = "tokio")]
         {
             let mut rx = self.inner.shutdown_tx.subscribe();
+            if self.is_shutdown() {
+                return;
+            }
             let _ = rx.recv().await;
         }
 
@@ -119,7 +127,7 @@ impl ShutdownHandle {
         self.shutdown_time().and_then(|shutdown_time| {
             let elapsed = shutdown_time.elapsed();
             let timeout =
-                Duration::from_millis(self.inner.force_timeout_ms.load(Ordering::Acquire));
+                Duration::from_millis(self.inner.graceful_timeout_ms.load(Ordering::Acquire));
 
             if elapsed < timeout {
                 Some(timeout - elapsed)
@@ -139,6 +147,8 @@ struct ShutdownInner {
     shutdown_reason: ArcSwap<ShutdownReason>,
     /// Time when shutdown was initiated
     shutdown_time: Mutex<Option<Instant>>,
+    /// Graceful shutdown timeout in milliseconds
+    graceful_timeout_ms: AtomicU64,
     /// Force shutdown timeout in milliseconds
     force_timeout_ms: AtomicU64,
     /// Kill timeout in milliseconds (Unix only)
@@ -161,7 +171,7 @@ struct SubsystemState {
 }
 
 impl ShutdownInner {
-    fn new(force_timeout_ms: u64, kill_timeout_ms: u64) -> Self {
+    fn new(graceful_timeout_ms: u64, force_timeout_ms: u64, kill_timeout_ms: u64) -> Self {
         #[cfg(feature = "tokio")]
         let (shutdown_tx, _) = tokio::sync::broadcast::channel(16);
 
@@ -169,6 +179,7 @@ impl ShutdownInner {
             shutdown_initiated: AtomicBool::new(false),
             shutdown_reason: ArcSwap::new(Arc::new(ShutdownReason::Requested)),
             shutdown_time: Mutex::new(None),
+            graceful_timeout_ms: AtomicU64::new(graceful_timeout_ms),
             force_timeout_ms: AtomicU64::new(force_timeout_ms),
             kill_timeout_ms: AtomicU64::new(kill_timeout_ms),
             subsystems: Mutex::new(Vec::new()),
@@ -180,7 +191,8 @@ impl ShutdownInner {
     /// Check if shutdown has been initiated.
     #[must_use]
     pub fn is_shutdown(&self) -> bool {
-        self.shutdown_initiated.load(Ordering::Acquire)
+        // Use Relaxed ordering for fast reads (single atomic variable)
+        self.shutdown_initiated.load(Ordering::Relaxed)
     }
 
     /// Initiate shutdown with the given reason.
@@ -227,8 +239,9 @@ impl ShutdownInner {
 
     fn mark_subsystem_ready(&self, subsystem_id: u64) {
         let subsystems = self.subsystems.lock();
+        // Use Relaxed ordering - only one thread marks each subsystem ready
         if let Some(subsystem) = subsystems.iter().find(|s| s.id == subsystem_id) {
-            subsystem.ready.store(true, Ordering::Release);
+            subsystem.ready.store(true, Ordering::Relaxed);
             debug!(
                 "Subsystem '{}' marked as ready for shutdown",
                 subsystem.name
@@ -238,14 +251,15 @@ impl ShutdownInner {
 
     fn are_all_subsystems_ready(&self) -> bool {
         let subsystems = self.subsystems.lock();
-        subsystems.iter().all(|s| s.ready.load(Ordering::Acquire))
+        // Early exit optimization: if any subsystem is not ready, return false immediately
+        subsystems.iter().all(|s| s.ready.load(Ordering::Relaxed))
     }
 
     fn get_subsystem_states(&self) -> Vec<(String, bool)> {
         let subsystems = self.subsystems.lock();
         subsystems
             .iter()
-            .map(|s| (s.name.clone(), s.ready.load(Ordering::Acquire)))
+            .map(|s| (s.name.clone(), s.ready.load(Ordering::Relaxed)))
             .collect()
     }
 }
@@ -259,9 +273,13 @@ pub struct ShutdownCoordinator {
 impl ShutdownCoordinator {
     /// Create a new shutdown coordinator.
     #[must_use]
-    pub fn new(force_timeout_ms: u64, kill_timeout_ms: u64) -> Self {
+    pub fn new(graceful_timeout_ms: u64, force_timeout_ms: u64, kill_timeout_ms: u64) -> Self {
         Self {
-            inner: Arc::new(ShutdownInner::new(force_timeout_ms, kill_timeout_ms)),
+            inner: Arc::new(ShutdownInner::new(
+                graceful_timeout_ms,
+                force_timeout_ms,
+                kill_timeout_ms,
+            )),
         }
     }
 
@@ -305,14 +323,13 @@ impl ShutdownCoordinator {
             return Err(Error::invalid_state("Shutdown not initiated"));
         }
 
-        let _shutdown_time = self
-            .inner
-            .shutdown_time
-            .lock()
-            .ok_or_else(|| Error::invalid_state("Shutdown time not set"))?;
+        let shutdown_time = *self.inner.shutdown_time.lock();
+        if shutdown_time.is_none() {
+            return Err(Error::invalid_state("Shutdown time not set"));
+        }
 
         let graceful_timeout =
-            Duration::from_millis(self.inner.force_timeout_ms.load(Ordering::Acquire));
+            Duration::from_millis(self.inner.graceful_timeout_ms.load(Ordering::Acquire));
 
         info!(
             "Waiting for subsystems to shutdown gracefully (timeout: {:?})",
@@ -321,6 +338,17 @@ impl ShutdownCoordinator {
 
         // Wait for all subsystems to be ready or timeout
         let start = Instant::now();
+
+        // Fast path: check if already complete
+        if self.inner.are_all_subsystems_ready() {
+            info!("All subsystems already shut down gracefully");
+            return Ok(());
+        }
+
+        // Use exponential backoff polling with wakeup hints
+        let mut poll_interval = Duration::from_millis(1);
+        let max_poll_interval = Duration::from_millis(50);
+
         while start.elapsed() < graceful_timeout {
             if self.inner.are_all_subsystems_ready() {
                 info!(
@@ -330,12 +358,15 @@ impl ShutdownCoordinator {
                 return Ok(());
             }
 
-            // Short sleep to avoid busy waiting
+            // Exponential backoff to reduce CPU usage under load
             #[cfg(feature = "tokio")]
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(poll_interval).await;
 
             #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-            async_std::task::sleep(Duration::from_millis(50)).await;
+            async_std::task::sleep(poll_interval).await;
+
+            // Exponential backoff: double interval up to max
+            poll_interval = (poll_interval * 2).min(max_poll_interval);
         }
 
         // Timeout exceeded, log which subsystems are not ready
@@ -362,21 +393,50 @@ impl ShutdownCoordinator {
     ///
     /// # Errors
     ///
-    /// Returns an `Error::timeout` if the kill shutdown timeout is reached.
+    /// Returns an `Error::timeout` if the force shutdown timeout is reached.
     pub async fn wait_for_force_shutdown(&self) -> Result<()> {
         let force_timeout =
             Duration::from_millis(self.inner.force_timeout_ms.load(Ordering::Acquire));
 
         warn!("Waiting for forced shutdown timeout: {:?}", force_timeout);
 
+        let start = Instant::now();
+        while start.elapsed() < force_timeout {
+            if self.inner.are_all_subsystems_ready() {
+                info!("All subsystems shut down during force phase");
+                return Ok(());
+            }
+
+            #[cfg(feature = "tokio")]
+            tokio::time::sleep(Duration::from_millis(50)).await;
+
+            #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+            async_std::task::sleep(Duration::from_millis(50)).await;
+        }
+
+        let timeout_ms = u64::try_from(force_timeout.as_millis()).unwrap_or(u64::MAX);
+        Err(Error::timeout("Force shutdown", timeout_ms))
+    }
+
+    /// Wait for kill shutdown timeout after force timeout expires.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `Error::timeout` if the kill timeout is reached.
+    pub async fn wait_for_kill_shutdown(&self) -> Result<()> {
+        let kill_timeout =
+            Duration::from_millis(self.inner.kill_timeout_ms.load(Ordering::Acquire));
+
+        warn!("Waiting for kill shutdown timeout: {:?}", kill_timeout);
+
         #[cfg(feature = "tokio")]
-        tokio::time::sleep(force_timeout).await;
+        tokio::time::sleep(kill_timeout).await;
 
         #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-        async_std::task::sleep(force_timeout).await;
+        async_std::task::sleep(kill_timeout).await;
 
-        error!("Force shutdown timeout exceeded, exiting immediately");
-        Ok(())
+        let timeout_ms = u64::try_from(kill_timeout.as_millis()).unwrap_or(u64::MAX);
+        Err(Error::timeout("Kill shutdown", timeout_ms))
     }
 
     /// Get statistics about the shutdown process.
@@ -401,7 +461,15 @@ impl ShutdownCoordinator {
     }
 
     /// Update timeout configurations at runtime.
-    pub fn update_timeouts(&self, force_timeout_ms: u64, kill_timeout_ms: u64) {
+    pub fn update_timeouts(
+        &self,
+        graceful_timeout_ms: u64,
+        force_timeout_ms: u64,
+        kill_timeout_ms: u64,
+    ) {
+        self.inner
+            .graceful_timeout_ms
+            .store(graceful_timeout_ms, Ordering::Release);
         self.inner
             .force_timeout_ms
             .store(force_timeout_ms, Ordering::Release);
@@ -409,8 +477,8 @@ impl ShutdownCoordinator {
             .kill_timeout_ms
             .store(kill_timeout_ms, Ordering::Release);
         debug!(
-            "Updated shutdown timeouts: force={}ms, kill={}ms",
-            force_timeout_ms, kill_timeout_ms
+            "Updated shutdown timeouts: graceful={}ms, force={}ms, kill={}ms",
+            graceful_timeout_ms, force_timeout_ms, kill_timeout_ms
         );
     }
 }
@@ -479,7 +547,7 @@ mod tests {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
             // Use shorter timeouts for testing
-            let coordinator = ShutdownCoordinator::new(100, 200);
+            let coordinator = ShutdownCoordinator::new(100, 200, 300);
 
             // Create handles for subsystems
             let handle1 = coordinator.create_handle("subsystem1");
@@ -523,7 +591,7 @@ mod tests {
     async fn test_shutdown_timeout() {
         // Add a test timeout to prevent the test itself from hanging
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(100, 200); // Very short timeout
+            let coordinator = ShutdownCoordinator::new(100, 200, 300); // Very short timeout
 
             let _handle1 = coordinator.create_handle("slow_subsystem");
 
@@ -545,7 +613,7 @@ mod tests {
     async fn test_shutdown_timeout() {
         // Add a test timeout to prevent the test itself from hanging
         let test_result = async_std::future::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(100, 200); // Very short timeout
+            let coordinator = ShutdownCoordinator::new(100, 200, 300); // Very short timeout
 
             let _handle1 = coordinator.create_handle("slow_subsystem");
 
@@ -575,7 +643,7 @@ mod tests {
     async fn test_multiple_shutdown_initiation() {
         // Add a test timeout to prevent freezing
         let test_result = tokio::time::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
 
             // First initiation should succeed
             assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
@@ -597,7 +665,7 @@ mod tests {
     async fn test_multiple_shutdown_initiation() {
         // Add a test timeout to prevent freezing
         let test_result = async_std::future::timeout(Duration::from_secs(5), async {
-            let coordinator = ShutdownCoordinator::new(5000, 10000);
+            let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
 
             // First initiation should succeed
             assert!(coordinator.initiate_shutdown(ShutdownReason::Requested));
@@ -617,7 +685,7 @@ mod tests {
 
     #[test]
     fn test_shutdown_stats() {
-        let coordinator = ShutdownCoordinator::new(5000, 10000);
+        let coordinator = ShutdownCoordinator::new(5000, 10000, 15000);
         let handle1 = coordinator.create_handle("test1");
         let handle2 = coordinator.create_handle("test2");
 
@@ -650,7 +718,7 @@ async fn test_shutdown_coordination() {
     // Add a test timeout to prevent freezing
     let test_result = async_std::future::timeout(Duration::from_secs(5), async {
         // Use shorter timeouts for testing
-        let coordinator = ShutdownCoordinator::new(100, 200);
+        let coordinator = ShutdownCoordinator::new(100, 200, 300);
 
         // Create handles for subsystems
         let handle1 = coordinator.create_handle("subsystem1");

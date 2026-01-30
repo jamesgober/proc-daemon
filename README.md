@@ -33,7 +33,7 @@
 - **Configuration Hot-Reload**: Dynamic configuration updates without service interruption
 - **Structured Logging**: High-performance tracing with JSON support and log rotation
 - **Metrics Collection**: Built-in performance monitoring and resource tracking
-- **Memory Safety**: 100% safe Rust with `#![deny(unsafe_code)]`
+- **Memory Safety**: Safe Rust by default (`#![deny(unsafe_code)]`); Windows monitoring uses guarded `unsafe` when the `windows-monitoring` feature is enabled
 
 ### Enterprise Ready
 - **High Concurrency**: Built for 100,000+ concurrent operations
@@ -51,10 +51,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "0.9.0"
+proc-daemon = "1.0.0-rc.1"
 
 # Optional features
-proc-daemon = { version = "0.9.0", features = ["full"] }
+proc-daemon = { version = "1.0.0-rc.1", features = ["full"] }
 ```
 
 ### Feature Flags
@@ -121,7 +121,7 @@ Enable the `high-res-timing` feature to access a fast, monotonic clock backed by
 
 ```toml
 [dependencies]
-proc-daemon = { version = "0.9.0", features = ["high-res-timing"] }
+proc-daemon = { version = "1.0.0-rc.1", features = ["high-res-timing"] }
 ```
 
 ```rust
@@ -141,7 +141,7 @@ Enable the `mimalloc` feature to switch the global allocator for potential perfo
 
 ```toml
 [dependencies]
-proc-daemon = { version = "0.9.0", features = ["mimalloc"] }
+proc-daemon = { version = "1.0.0-rc.1", features = ["mimalloc"] }
 ```
 
 No code changes are required—`proc-daemon` sets the global allocator when the feature is enabled.
@@ -152,7 +152,7 @@ Enable the `lockfree-coordination` feature to use a lock-free MPMC channel for c
 
 ```toml
 [dependencies]
-proc-daemon = { version = "0.9.0", features = ["lockfree-coordination"] }
+proc-daemon = { version = "1.0.0-rc.1", features = ["lockfree-coordination"] }
 ```
 
 APIs:
@@ -492,7 +492,7 @@ cargo bench
 <br>
 
 ## Security
-- **Memory Safety**: 100% safe Rust with no unsafe code
+- **Memory Safety**: Safe Rust by default; Windows monitoring uses guarded `unsafe` when the `windows-monitoring` feature is enabled
 - **Signal Safety**: Async signal handling prevents race conditions  
 - **Resource Limits**: Configurable limits prevent resource exhaustion
 - **Graceful Degradation**: Continues operating even when subsystems fail

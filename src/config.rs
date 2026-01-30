@@ -205,7 +205,9 @@ impl Config {
     ///
     /// Will return an error if the default configuration validation fails.
     pub fn new() -> Result<Self> {
-        Ok(Self::default())
+        let config = Self::default();
+        config.validate()?;
+        Ok(config)
     }
 
     /// Load configuration from multiple sources with precedence:
@@ -375,6 +377,21 @@ impl Config {
             }
         }
 
+        if let Some(ref work_dir) = self.work_dir {
+            if !work_dir.exists() {
+                return Err(Error::config(format!(
+                    "Working directory does not exist: {}",
+                    work_dir.display()
+                )));
+            }
+            if !work_dir.is_dir() {
+                return Err(Error::config(format!(
+                    "Working directory is not a directory: {}",
+                    work_dir.display()
+                )));
+            }
+        }
+
         if let Some(ref log_file) = self.logging.file {
             if let Some(parent) = log_file.parent() {
                 if !parent.exists() {
@@ -383,6 +400,12 @@ impl Config {
                         parent.display()
                     )));
                 }
+            }
+        }
+
+        if let Some(max_size) = self.logging.max_file_size {
+            if max_size == 0 {
+                return Err(Error::config("Log max_file_size must be greater than 0"));
             }
         }
 

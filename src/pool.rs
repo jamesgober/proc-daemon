@@ -1,6 +1,7 @@
+use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::fmt::{self, Debug};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// A thread-safe object pool that pre-allocates and reuses objects to avoid runtime allocations
 /// on hot paths.
@@ -31,7 +32,7 @@ impl<T> ObjectPool<T> {
     ///
     /// If the pool is full, the object will be dropped.
     fn return_object(&self, object: T) {
-        let mut available = self.available.lock().unwrap();
+        let mut available = self.available.lock();
         if available.len() < self.max_size {
             available.push_back(object);
         }
@@ -79,13 +80,9 @@ impl<T: Send + 'static> ObjectPool<T> {
     ///
     /// A `PooledObject<T>` that will return to the pool when dropped
     /// Get an object from the pool. If the pool is empty, creates a new object.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the internal mutex is poisoned.
     pub fn get(&self) -> PooledObject<'_, T> {
         let object = {
-            let mut available = self.available.lock().unwrap();
+            let mut available = self.available.lock();
             available.pop_front().unwrap_or_else(|| (self.create_fn)())
         };
 
