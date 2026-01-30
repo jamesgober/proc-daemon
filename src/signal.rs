@@ -352,18 +352,13 @@ pub const fn signal_description(signal: i32) -> &'static str {
 }
 
 /// Signal handling mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SignalHandling {
     /// Enabled - handle this signal
     Enabled,
     /// Disabled - do not handle this signal
+    #[default]
     Disabled,
-}
-
-impl Default for SignalHandling {
-    fn default() -> Self {
-        Self::Disabled
-    }
 }
 
 impl From<bool> for SignalHandling {

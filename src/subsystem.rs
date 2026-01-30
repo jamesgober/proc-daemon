@@ -45,9 +45,10 @@ pub trait Subsystem: Send + Sync + 'static {
 }
 
 /// Restart policy for subsystems that fail.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RestartPolicy {
     /// Never restart the subsystem
+    #[default]
     Never,
     /// Always restart the subsystem
     Always,
@@ -64,11 +65,7 @@ pub enum RestartPolicy {
     },
 }
 
-impl Default for RestartPolicy {
-    fn default() -> Self {
-        Self::Never
-    }
-}
+
 
 /// State of a subsystem.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -895,7 +892,7 @@ impl SubsystemManager {
                     // Execute health check function if available
                     subsystem
                         .health_check()
-                        .map_or(true, |health_check| health_check())
+                        .is_none_or(|health_check| health_check())
                 }
                 _ => true, // Other states are considered healthy for now
             };
