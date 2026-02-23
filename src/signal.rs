@@ -246,16 +246,16 @@ impl SignalHandler {
 
         // Set up Windows console event handlers
         let mut ctrl_c_stream = ctrl_c()
-            .map_err(|e| Error::signal(format!("Failed to register Ctrl+C handler: {}", e)))?;
+            .map_err(|e| Error::signal(format!("Failed to register Ctrl+C handler: {e}")))?;
 
         let mut ctrl_break_stream = ctrl_break()
-            .map_err(|e| Error::signal(format!("Failed to register Ctrl+Break handler: {}", e)))?;
+            .map_err(|e| Error::signal(format!("Failed to register Ctrl+Break handler: {e}")))?;
 
         let mut ctrl_close_stream = ctrl_close()
-            .map_err(|e| Error::signal(format!("Failed to register Ctrl+Close handler: {}", e)))?;
+            .map_err(|e| Error::signal(format!("Failed to register Ctrl+Close handler: {e}")))?;
 
         let mut ctrl_shutdown_stream = ctrl_shutdown()
-            .map_err(|e| Error::signal(format!("Failed to register shutdown handler: {}", e)))?;
+            .map_err(|e| Error::signal(format!("Failed to register shutdown handler: {e}")))?;
 
         info!("Windows console event handlers registered");
 

@@ -317,10 +317,16 @@ impl ResourceTracker {
     ///
     /// # Errors
     ///
+    /// Starts the resource tracker background task.
+    ///
     /// Returns an error if the process ID cannot be determined or
-    /// if there's an issue with the system APIs when gathering resource metrics
+    /// if there's an issue with the system APIs when gathering resource metrics.
+    ///
+    /// # Panics
+    ///
+    /// May panic if the `RwLock` for history is poisoned in an extremely rare concurrent scenario.
+    /// This is a safety guarantee but should not happen in normal operation due to panic guards.
     #[cfg(all(feature = "tokio", not(feature = "async-std")))]
-    #[allow(clippy::missing_errors_doc)]
     pub fn start(&mut self) -> Result<()> {
         if self.task_handle.is_some() {
             return Ok(()); // Already started
@@ -363,7 +369,8 @@ impl ResourceTracker {
                         while hist.len() > max_history {
                             hist.pop_front();
                         }
-                    } // Drop lock immediately
+                        drop(hist); // Explicitly drop lock
+                    }
 
                     // Soft memory limit alert
                     if let Some(limit) = memory_soft_limit_bytes {
@@ -381,6 +388,7 @@ impl ResourceTracker {
                     #[cfg(feature = "metrics")]
                     if let Some(m) = metrics.as_ref() {
                         m.set_gauge("proc.memory_bytes", usage.memory_bytes());
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                         let cpu_milli = (usage.cpu_percent() * 1000.0).max(0.0).round() as u64;
                         m.set_gauge("proc.cpu_milli_percent", cpu_milli);
                         m.set_gauge("proc.thread_count", u64::from(usage.thread_count()));
