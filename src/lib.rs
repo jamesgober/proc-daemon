@@ -163,7 +163,10 @@ pub mod timing {
 /// operations are non-fatal; failures are logged at debug level.
 #[cfg(feature = "scheduler-hints")]
 pub mod scheduler {
-    use tracing::{debug, info};
+    use tracing::debug;
+
+    #[cfg(all(feature = "scheduler-hints-unix", unix))]
+    use tracing::info;
 
     /// Apply process-level scheduler hints.
     ///
