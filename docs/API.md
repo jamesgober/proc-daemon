@@ -19,7 +19,7 @@
 ### Install Manually
 ```toml
 [dependencies]
-proc-daemon = "1.0.0-rc2"
+proc-daemon = "1.0.0"
 ```
 
 Subscribe to events (lock-free backend):
@@ -47,7 +47,7 @@ if let Some(rx) = manager.subscribe_events() {
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0-rc2", features = ["profiling"] }
+proc-daemon = { version = "1.0.0", features = ["profiling"] }
 ```
 
 ```rust
@@ -64,7 +64,7 @@ proc-daemon = { version = "1.0.0-rc2", features = ["profiling"] }
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0-rc2", features = ["heap-profiling"] }
+proc-daemon = { version = "1.0.0", features = ["heap-profiling"] }
 ```
 
 ```rust
@@ -133,7 +133,7 @@ Example enabling features:
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0-rc2", features = ["tokio", "metrics", "high-res-timing"] }
+proc-daemon = { version = "1.0.0", features = ["tokio", "metrics", "high-res-timing"] }
 ```
 
 <br>
@@ -145,7 +145,7 @@ Enable the `lockfree-coordination` feature to use a lock-free MPMC channel for s
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0-rc2", features = ["lockfree-coordination"] }
+proc-daemon = { version = "1.0.0", features = ["lockfree-coordination"] }
 ```
 
 Channel facade (always available):
