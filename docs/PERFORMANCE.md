@@ -12,13 +12,15 @@
 
 [Home](../README.md) 
 
-Typical performance characteristics (Criterion, release, v1.0.0-rc.1):
+Typical performance characteristics (Criterion, release, v1.0.0-rc.2):
 - **Daemon Creation**: ~1.87μs per init
 - **Subsystem Registration** (3 tasks): ~3.37μs per build
 - **Config Build**: ~92ns per build
 - **Shutdown Coordination** (single quick task): ~2.56μs per cycle
 - **Error Creation**: ~22.8ns per error
 - **Error Chain Construction**: ~56.7ns per chain
+
+Benchmarks unchanged from the previous release; results carried forward.
 
 ### Memory Usage
 
@@ -48,7 +50,7 @@ Results generated with Criterion, default configuration, Tokio runtime, no metri
 
 | Version | Date | Daemon create | Subsystem reg (3) | Config build | Shutdown (1 task) | Error create | Error chain |
 |---------|------|---------------|-------------------|--------------|-------------------|--------------|-------------|
-| 1.0.0-rc.1 | 2026-01-30 | 1.87 μs | 3.37 μs | 92.1 ns | 2.56 μs | 22.8 ns | 56.7 ns |
+| 1.0.0-rc.2 | 2026-02-23 | 1.87 μs | 3.37 μs | 92.1 ns | 2.56 μs | 22.8 ns | 56.7 ns |
 | 0.9.0 | 2025-08-26 | 9.0 μs | 12.9 μs | 234 ns | 10.2 μs | 71.7 ns | 539 ns |
 
 

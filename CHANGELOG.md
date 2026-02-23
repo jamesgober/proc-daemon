@@ -12,6 +12,23 @@
 
 - _No changes yet._
 
+## [1.0.0-RC.2] - 2026-02-23
+
+### Added
+
+- Audit allowlist for RustSec warnings on discontinued `async-std` and `instant`
+
+### Changed
+
+- Version: bumped crate version to `1.0.0-rc.2`
+- Dependencies: upgraded `bytes` to 1.11.1, `pprof` to 0.14.1, `tokio` to 1.49.0, `tokio-test` to 0.4.5
+- Docs: mark `async-std` support as best-effort legacy and update installation snippets to `1.0.0-rc.2`
+
+### Fixed
+
+- Security: resolved RUSTSEC-2026-0007 (bytes integer overflow in `BytesMut::reserve`)
+- Safety: addressed RUSTSEC-2024-0408 by upgrading `pprof`
+
 ## [1.0.0-RC.1] - 2026-01-30
 
 ### Performance
@@ -202,7 +219,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.2...HEAD
+[1.0.0-RC.2]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-RC.1]: https://github.com/jamesgober/proc-daemon/compare/v0.9.0...v1.0.0-rc.1
 [0.9.0]: https://github.com/jamesgober/proc-daemon/compare/v0.6.1...v0.9.0
 [0.6.1]: https://github.com/jamesgober/proc-daemon/compare/v0.6.0...v0.6.1
