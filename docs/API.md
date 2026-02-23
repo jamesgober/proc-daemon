@@ -127,6 +127,8 @@ cargo run --example hot_reload --features "tokio config-watch toml mmap-config"
 | `heap-profiling` | Optional heap profiling via `dhat` | ❌ |
 | `full` | All features enabled | ❌ |
 
+Note: `async-std` is discontinued upstream; support here is best-effort and intended for existing users.
+
 Example enabling features:
 
 ```toml
