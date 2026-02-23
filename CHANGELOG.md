@@ -36,7 +36,7 @@
 ### Added
 
 - Logging: size-based rotation for file logging with `LogConfig.max_file_size` and `LogConfig.max_files`
-- Shutdown: explicit kill-phase timeout handling via `ShutdownCoordinator::wait_for_kill_shutdown()`
+- Shutdown: explicit kill timeout handling via `ShutdownCoordinator::wait_for_kill_shutdown()`
 
 ### Changed
 
@@ -56,7 +56,7 @@
 - Replaced manual `Default` implementations with `#[derive(Default)]` per clippy
 - Fixed unchecked time subtraction using `checked_sub` in shutdown module
 - Replaced `once_cell::sync::Lazy` with `std::sync::LazyLock` for high-res timing
-- Simplified health check logic using `is_none_or` instead of `map_or`
+- Streamlined health check logic using `is_none_or` instead of `map_or`
 - `ShutdownHandle::cancelled()` now short-circuits when shutdown already initiated on Tokio
 - `SubsystemManager::stop_subsystem()` only reports readiness after task completion
 - Async-std Unix signal handling now registers SIGTERM/SIGINT/SIGQUIT/SIGHUP correctly
@@ -97,12 +97,12 @@
 - Clippy/lints cleanup across core modules:
   - `src/config.rs`: removed unnecessary `let _ =` around match in watcher callback
   - `src/coord.rs`: added `# Errors` docs to `chan::try_recv()` and backticked `std::sync::mpsc`
-  - `src/subsystem.rs`: tightened lock lifetimes and added `# Panics` docs; simplified `try_next_event()` to use `.ok()` idiom
+  - `src/subsystem.rs`: tightened lock lifetimes and added `# Panics` docs; used `.ok()` idiom in `try_next_event()`
   - `src/profiling.rs`: added `# Errors` docs, replaced wildcard imports in heap module
 - Clippy cleanup (examples + library):
   - `src/coord.rs`: add `#[must_use]` to `chan::unbounded()`
   - `src/resources.rs`: avoid repeated `Instant::now()` comparisons; round CPU milli-percent before casting
-  - Verified clean with `cargo clippy -- -D warnings`, `--all-features`, and `--examples`
+  - Clean across `cargo clippy -- -D warnings`, `--all-features`, and `--examples`
 
 ### Changed
 
@@ -209,4 +209,4 @@ Initial pre-dev release.
 [0.6.0]: https://github.com/jamesgober/proc-daemon/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jamesgober/proc-daemon/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/jamesgober/proc-daemon/compare/v0.1.0...v0.3.0
-[0.1.0]: https://github.com/jamesgober/proc-forge/releases/tag/v0.1.0
+[0.1.0]: https://github.com/jamesgober/proc-daemon/releases/tag/v0.1.0
