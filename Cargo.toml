@@ -75,7 +75,7 @@ toml = { version = "0.8", optional = true }
 memmap2 = { version = "0.9", optional = true }
 
 # Optional profiling
-pprof = { version = "0.13", features = ["prost-codec"], optional = true }
+pprof = { version = "0.14", features = ["prost-codec"], optional = true }
 "dhat" = { version = "0.3", optional = true }
 
 # Error handling (mandatory)
