@@ -77,6 +77,8 @@ proc-daemon = { version = "1.0.0-rc.1", features = ["full"] }
 | `heap-profiling` | Optional heap profiling via `dhat` | ❌ |
 | `full` | All features enabled | ❌ |
 
+Note: `async-std` is discontinued upstream; support here is best-effort and intended for existing users.
+
 ## Quick Start
 
 ### Simple Daemon
@@ -526,7 +528,7 @@ cargo test --all-features
 
 ### Acknowledgments
 - Inspired by production daemon patterns from high-scale deployments
-- Built on the excellent Rust async ecosystem (Tokio, async-std)
+- Built on the excellent Rust async ecosystem (Tokio; async-std legacy support)
 - Configuration management powered by [Figment](https://github.com/SergioBenitez/Figment)
 - Logging via the [tracing](https://github.com/tokio-rs/tracing) ecosystem
 
