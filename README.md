@@ -19,6 +19,10 @@
     A foundational framework for building high-performance, resilient daemon services in Rust. Designed for enterprise applications requiring nanosecond-level performance, bulletproof reliability, and extreme concurrency.
 </p>
 
+## Status
+
+**✅ v1.0.0 Stable Release** — Production-ready with zero critical vulnerabilities, comprehensive testing (46/46 tests passing), and cross-platform validation. See [release notes](./dev/release-notes/v1.0.0.md) for details.
+
 ## Features
 
 ### Core Capabilities
@@ -57,13 +61,15 @@ proc-daemon = "1.0.0"
 proc-daemon = { version = "1.0.0", features = ["full"] }
 ```
 
+**Rust Version:** Requires Rust 1.82.0 or later
+
 ### Feature Flags
 
 | Feature | Description | Default |
 |---------|-------------|---------|
 | `tokio` | Tokio runtime support | ✅ |
-| `async-std` | async-std runtime support | ❌ |
-| `metrics` | Performance metrics collection | ❌ |
+| `async-std` | async-std runtime support (unmaintained; best-effort legacy) | ❌ |
+| `metrics` | Performance metrics collection and introspection | ❌ |
 | `console` | Enhanced console output | ❌ |
 | `json-logs` | JSON structured logging | ❌ |
 | `config-watch` | Configuration hot-reloading | ❌ |
@@ -73,11 +79,11 @@ proc-daemon = { version = "1.0.0", features = ["full"] }
 | `scheduler-hints` | Enable scheduler tuning hooks (no-op by default) | ❌ |
 | `scheduler-hints-unix` | Best-effort Unix niceness adjustment (uses `renice`; no-op without privileges) | ❌ |
 | `lockfree-coordination` | Lock-free coordination/events via crossbeam-channel | ❌ |
-| `profiling` | Optional CPU profiling via `pprof` | ❌ |
+| `profiling` | Optional CPU profiling via `pprof` (Unix-preferred; Windows build issues) | ❌ |
 | `heap-profiling` | Optional heap profiling via `dhat` | ❌ |
 | `full` | All features enabled | ❌ |
 
-Note: `async-std` is discontinued upstream; support here is best-effort and intended for existing users.
+Note: `async-std` is discontinued upstream; support here is best-effort and intended for existing users. `pprof` has known Windows build incompatibilities; users on Windows can use other profiling tools or enable on Unix systems.
 
 ## Quick Start
 
@@ -460,6 +466,47 @@ Notes:
 <hr>
 <br>
 
+## Examples
+
+**All runnable examples are available in the [`examples/`](./examples) directory.** Here are the key ones:
+
+### simple.rs
+A minimal daemon that demonstrates basic setup and graceful shutdown:
+
+```bash
+cargo run --example simple --features tokio
+```
+
+### comprehensive.rs
+Multi-subsystem daemon showcasing:
+- Custom subsystem implementations
+- Health checks
+- Restart policies
+- Metrics collection
+
+```bash
+cargo run --example comprehensive --features tokio,metrics
+```
+
+### hot_reload.rs
+Configuration hot-reload demonstration that watches `daemon.toml`:
+
+```bash
+cargo run --example hot_reload --features "tokio config-watch toml mmap-config"
+```
+
+Edit `daemon.toml` to see the daemon pick up changes without restart.
+
+### metrics_server.rs
+Metrics collection and introspection example:
+
+```bash
+cargo run --example metrics_server --features "tokio metrics"
+```
+
+<hr>
+<br>
+
 ## PERFORMANCE
 proc-daemon is designed for extreme performance:
 
@@ -494,19 +541,62 @@ cargo bench
 <br>
 
 ## Security
-- **Memory Safety**: Safe Rust by default; Windows monitoring uses guarded `unsafe` when the `windows-monitoring` feature is enabled
-- **Signal Safety**: Async signal handling prevents race conditions  
-- **Resource Limits**: Configurable limits prevent resource exhaustion
+
+### v1.0.0 Security Posture
+
+- **Zero Critical Vulnerabilities**: All dependencies audited and patched
+- **Bytes Overflow Fixed**: CVE-level integer overflow in `BytesMut::reserve` patched (bytes 1.11.1+)
+- **Optional Feature Auditing**: Unmaintained dependencies (async-std, instant) allowlisted and documented
+- **Memory Safety**: Safe Rust by default (`#![deny(unsafe_code)]`); Windows monitoring uses guarded `unsafe` only when explicitly enabled
+- **Signal Safety**: Async signal handling prevents race conditions and signal-induced deadlocks
+- **Resource Limits**: Configurable limits prevent resource exhaustion attacks
 - **Graceful Degradation**: Continues operating even when subsystems fail
+
+### Running Security Checks
+
+```bash
+# Verify no unallowed vulnerabilities
+cargo audit
+
+# Static analysis
+cargo clippy --all-features --all-targets -- -D warnings
+
+# Check for unsafe code
+cargo unsafe-all-targets
+```
+
+See [.cargo/audit.toml](./.cargo/audit.toml) for documented allowed vs. disallowed vulnerabilities.
 
 ### Development Setup
 
 ```bash
 git clone https://github.com/jamesgober/proc-daemon.git
 cd proc-daemon
+
+# Build with all features enabled
 cargo build --all-features
+
+# Run all tests
 cargo test --all-features
+
+# Run linting checks
+cargo clippy --all-features --all-targets -- -D warnings
+
+# Run benchmarks
+cargo bench
+
+# Check security vulnerabilities
+cargo audit
 ```
+
+### Supported Platforms
+
+- **Linux**: Full support, optimized for production
+- **macOS**: Full support, verified on x86_64 and ARM64
+- **Windows**: Supported, with caveats listed below
+- **FreeBSD**: Likely works but not regularly tested
+
+**Windows Note:** Some optional features (pprof, renice-based scheduler hints) have Unix-specific dependencies. These features gracefully disable on Windows with working alternatives or no-ops suitable for development.
 
 
 <!-- API REFERENCE
@@ -569,5 +659,5 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 ############################################# -->
 <div align="center">
   <h2></h2>
-  <sup>COPYRIGHT <small>&copy;</small> 2025 <strong>JAMES GOBER.</strong></sup>
+  <sup>COPYRIGHT <small>&copy;</small> 2026 <strong>JAMES GOBER.</strong></sup>
 </div>

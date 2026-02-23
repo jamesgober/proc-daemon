@@ -63,5 +63,5 @@ Results generated with Criterion, default configuration, Tokio runtime, no metri
 <div align="center">
   <br>
   <h2></h2>
-  <sup>COPYRIGHT <small>&copy;</small> 2025 <strong>JAMES GOBER.</strong></sup>
+  <sup>COPYRIGHT <small>&copy;</small> 2026 <strong>JAMES GOBER.</strong></sup>
 </div>
