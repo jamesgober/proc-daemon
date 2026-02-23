@@ -10,7 +10,7 @@
     </h1>
 </div>
 
-**Version:** 1.0.0-rc.2
+**Version:** 1.0.0-rc2
 
 
 

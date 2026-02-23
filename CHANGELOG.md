@@ -12,7 +12,7 @@
 
 - _No changes yet._
 
-## [1.0.0-RC.2] - 2026-02-23
+## [1.0.0-RC2] - 2026-02-23
 
 ### Added
 
@@ -20,9 +20,9 @@
 
 ### Changed
 
-- Version: bumped crate version to `1.0.0-rc.2`
+- Version: bumped crate version to `1.0.0-rc2`
 - Dependencies: upgraded `bytes` to 1.11.1, `pprof` to 0.14.1, `tokio` to 1.49.0, `tokio-test` to 0.4.5
-- Docs: mark `async-std` support as best-effort legacy and update installation snippets to `1.0.0-rc.2`
+- Docs: mark `async-std` support as best-effort legacy and update installation snippets to `1.0.0-rc2`
 
 ### Fixed
 
@@ -219,8 +219,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.2...HEAD
-[1.0.0-RC.2]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.1...v1.0.0-rc.2
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc2...HEAD
+[1.0.0-RC2]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.1...v1.0.0-rc2
 [1.0.0-RC.1]: https://github.com/jamesgober/proc-daemon/compare/v0.9.0...v1.0.0-rc.1
 [0.9.0]: https://github.com/jamesgober/proc-daemon/compare/v0.6.1...v0.9.0
 [0.6.1]: https://github.com/jamesgober/proc-daemon/compare/v0.6.0...v0.6.1

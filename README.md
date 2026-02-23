@@ -51,10 +51,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "1.0.0-rc.2"
+proc-daemon = "1.0.0-rc2"
 
 # Optional features
-proc-daemon = { version = "1.0.0-rc.2", features = ["full"] }
+proc-daemon = { version = "1.0.0-rc2", features = ["full"] }
 ```
 
 ### Feature Flags
@@ -123,7 +123,7 @@ Enable the `high-res-timing` feature to access a fast, monotonic clock backed by
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0-rc.2", features = ["high-res-timing"] }
+proc-daemon = { version = "1.0.0-rc2", features = ["high-res-timing"] }
 ```
 
 ```rust
@@ -143,7 +143,7 @@ Enable the `mimalloc` feature to switch the global allocator for potential perfo
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0-rc.2", features = ["mimalloc"] }
+proc-daemon = { version = "1.0.0-rc2", features = ["mimalloc"] }
 ```
 
 No code changes are required—`proc-daemon` sets the global allocator when the feature is enabled.
@@ -154,7 +154,7 @@ Enable the `lockfree-coordination` feature to use a lock-free MPMC channel for c
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0-rc.2", features = ["lockfree-coordination"] }
+proc-daemon = { version = "1.0.0-rc2", features = ["lockfree-coordination"] }
 ```
 
 APIs:
