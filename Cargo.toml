@@ -7,7 +7,7 @@ readme = "README.md"
 license = "Apache-2.0"
 
 authors = [
-    "James Gober <codeca@jamesgober.dev>"
+    "James Gober <me@jamesgober.com>"
 ]
 
 description = "A foundational framework for building high-performance, resilient daemon services in Rust. Handles all the boilerplate for signal handling, graceful shutdown, logging, and configuration."
