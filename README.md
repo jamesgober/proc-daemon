@@ -11,6 +11,7 @@
         <a href="./LICENSE" title="License"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
         <span>&nbsp;</span>
         <a href="https://docs.rs/proc-daemon" title="proc-daemon Documentation"><img alt="docs.rs" src="https://img.shields.io/docsrs/proc-daemon"></a>
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/proc-daemon)
         <span>&nbsp;</span>
         <a href="https://github.com/jamesgober/proc-daemon/actions"><img alt="GitHub CI" src="https://github.com/jamesgober/proc-daemon/actions/workflows/ci.yml/badge.svg"></a>
 </div>
