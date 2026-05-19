@@ -21,7 +21,11 @@
 
 ## Status
 
-**✅ Stable Release** — Production-ready with zero critical vulnerabilities, comprehensive automated testing (36 unit + 5 integration tests passing on default features; 39 + 5 + 3 doc tests under `--all-features`), and cross-platform validation. See the [v1.0.1 release notes](./docs/release-notes/v1.0.1.md) and [CHANGELOG.md](./CHANGELOG.md) for details.
+**✅ Stable Release** — Production-ready with zero critical vulnerabilities, comprehensive automated testing (36 unit + 5 integration tests passing on default features; 39 + 5 + 4 doc tests under `--all-features`), and cross-platform validation.
+
+**Latest:** v1.1.1 — see the [release notes](./docs/release-notes/v1.1.1.md) and [CHANGELOG.md](./CHANGELOG.md). Prior releases:
+[v1.1.0](./docs/release-notes/v1.1.0.md) (performance + ergonomics) ·
+[v1.0.1](./docs/release-notes/v1.0.1.md) (maintenance + audit).
 
 ## Features
 
@@ -55,10 +59,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "1.0.1"
+proc-daemon = "1.1.1"
 
 # Optional features
-proc-daemon = { version = "1.0.1", features = ["full"] }
+proc-daemon = { version = "1.1.1", features = ["full"] }
 ```
 
 **Rust Version:** Requires Rust 1.82.0 or later
@@ -90,33 +94,31 @@ Note: `async-std` is discontinued upstream; support here is best-effort and inte
 ### Simple Daemon
 
 ```rust
-use proc_daemon::{Daemon, Config};
+use proc_daemon::{Daemon, ShutdownHandle};
 use std::time::Duration;
 
-async fn my_service(mut shutdown: proc_daemon::ShutdownHandle) -> proc_daemon::Result<()> {
+async fn my_service(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
     let mut counter = 0;
-    
     loop {
         tokio::select! {
-            _ = shutdown.cancelled() => {
-                tracing::info!("Service shutting down gracefully after {} iterations", counter);
+            () = shutdown.cancelled() => {
+                tracing::info!("Service shutting down after {counter} iterations");
                 break;
             }
-            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+            () = tokio::time::sleep(Duration::from_secs(1)) => {
                 counter += 1;
-                tracing::info!("Service running: iteration {}", counter);
+                tracing::info!("Service running: iteration {counter}");
             }
         }
     }
-    
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> proc_daemon::Result<()> {
-    let config = Config::new()?;
-    
-    Daemon::builder(config)
+    // v1.1.0: `Daemon::new()` is the infallible default-config shortcut.
+    // For explicit config, use `Daemon::builder(config)` instead.
+    Daemon::new()
         .with_task("my_service", my_service)
         .run()
         .await
@@ -129,7 +131,7 @@ Enable the `high-res-timing` feature to access a fast, monotonic clock backed by
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.1", features = ["high-res-timing"] }
+proc-daemon = { version = "1.1.1", features = ["high-res-timing"] }
 ```
 
 ```rust
@@ -149,7 +151,7 @@ Enable the `mimalloc` feature to switch the global allocator for potential perfo
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.1", features = ["mimalloc"] }
+proc-daemon = { version = "1.1.1", features = ["mimalloc"] }
 ```
 
 No code changes are required—`proc-daemon` sets the global allocator when the feature is enabled.
@@ -160,7 +162,7 @@ Enable the `lockfree-coordination` feature to use a lock-free MPMC channel for c
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.1", features = ["lockfree-coordination"] }
+proc-daemon = { version = "1.1.1", features = ["lockfree-coordination"] }
 ```
 
 APIs:
@@ -178,9 +180,9 @@ SubsystemEvent::StateChanged { id, name, state, at }
 ### Multi-Subsystem Daemon
 
 ```rust
-use proc_daemon::{Daemon, Config, Subsystem, ShutdownHandle, RestartPolicy};
-use std::pin::Pin;
+use proc_daemon::{Config, Daemon, RestartPolicy, ShutdownHandle, Subsystem};
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 // Define a custom subsystem
@@ -189,23 +191,24 @@ struct HttpServer {
 }
 
 impl Subsystem for HttpServer {
-    fn run(&self, mut shutdown: ShutdownHandle) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
+    fn run(
+        &self,
+        mut shutdown: ShutdownHandle,
+    ) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
         let port = self.port;
         Box::pin(async move {
-            tracing::info!("HTTP server starting on port {}", port);
-            
+            tracing::info!("HTTP server starting on port {port}");
             loop {
                 tokio::select! {
-                    _ = shutdown.cancelled() => {
+                    () = shutdown.cancelled() => {
                         tracing::info!("HTTP server shutting down");
                         break;
                     }
-                    _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                    () = tokio::time::sleep(Duration::from_millis(100)) => {
                         // Handle HTTP requests here
                     }
                 }
             }
-            
             Ok(())
         })
     }
@@ -214,6 +217,7 @@ impl Subsystem for HttpServer {
         "http_server"
     }
 
+    // Restart with exponential backoff (1s → 60s, max 5 attempts).
     fn restart_policy(&self) -> RestartPolicy {
         RestartPolicy::ExponentialBackoff {
             initial_delay: Duration::from_secs(1),
@@ -224,10 +228,10 @@ impl Subsystem for HttpServer {
 }
 
 async fn background_worker(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
-    while !shutdown.is_shutdown() {
+    loop {
         tokio::select! {
-            _ = shutdown.cancelled() => break,
-            _ = tokio::time::sleep(Duration::from_secs(5)) => {
+            () = shutdown.cancelled() => break,
+            () = tokio::time::sleep(Duration::from_secs(5)) => {
                 tracing::info!("Background work completed");
             }
         }
@@ -237,9 +241,12 @@ async fn background_worker(mut shutdown: ShutdownHandle) -> proc_daemon::Result<
 
 #[tokio::main]
 async fn main() -> proc_daemon::Result<()> {
+    // Note: the builder timeout setters return `Result<Self>` (timeouts are
+    // validated relative to each other: graceful < force < kill). `?` chains
+    // them cleanly inside `main`.
     let config = Config::builder()
         .name("multi-subsystem-daemon")
-        .shutdown_timeout(Duration::from_secs(30))
+        .shutdown_timeout(Duration::from_secs(30))?
         .worker_threads(4)
         .build()?;
 
@@ -259,15 +266,22 @@ async fn main() -> proc_daemon::Result<()> {
 use proc_daemon::{Config, LogLevel};
 use std::time::Duration;
 
+# fn build_cfg() -> proc_daemon::Result<Config> {
 let config = Config::builder()
     .name("my-daemon")
     .log_level(LogLevel::Info)
     .json_logging(true)
-    .shutdown_timeout(Duration::from_secs(30))
+    // Timeouts are validated relative to each other: graceful < force < kill.
+    // The setters return `Result<Self>`; `?` chains them inside a Result fn.
+    .shutdown_timeout(Duration::from_secs(30))?
+    .force_shutdown_timeout(Duration::from_secs(45))?
+    .kill_timeout(Duration::from_secs(60))?
     .worker_threads(8)
     .enable_metrics(true)
     .hot_reload(true)
     .build()?;
+# Ok(config)
+# }
 ```
 
 ### File Configuration (TOML)
@@ -323,15 +337,24 @@ export DAEMON_PERFORMANCE_WORKER_THREADS="16"
 ### Custom Subsystems with Health Checks
 
 ```rust
+use proc_daemon::{ShutdownHandle, Subsystem};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 struct DatabasePool {
     connections: Arc<AtomicUsize>,
 }
 
 impl Subsystem for DatabasePool {
-    fn run(&self, mut shutdown: ShutdownHandle) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
-        let connections = Arc::clone(&self.connections);
+    fn run(
+        &self,
+        _shutdown: ShutdownHandle,
+    ) -> Pin<Box<dyn Future<Output = proc_daemon::Result<()>> + Send>> {
+        let _connections = Arc::clone(&self.connections);
         Box::pin(async move {
-            // Database pool management logic
+            // Database pool management logic …
             Ok(())
         })
     }
@@ -340,11 +363,11 @@ impl Subsystem for DatabasePool {
         "database_pool"
     }
 
+    // Health checks are polled every `monitoring.health_check_interval_ms`
+    // by the daemon main loop when `monitoring.health_checks = true`.
     fn health_check(&self) -> Option<Box<dyn Fn() -> bool + Send + Sync>> {
         let connections = Arc::clone(&self.connections);
-        Some(Box::new(move || {
-            connections.load(Ordering::Acquire) > 0
-        }))
+        Some(Box::new(move || connections.load(Ordering::Acquire) > 0))
     }
 }
 ```
@@ -375,16 +398,19 @@ println!("Uptime: {:?}", snapshot.uptime);
 
 ```rust
 use proc_daemon::signal::SignalConfig;
+use proc_daemon::Daemon;
 
+# async fn example() -> proc_daemon::Result<()> {
 let signal_config = SignalConfig::new()
-    .with_sighup()  // Enable SIGHUP handling
-    .without_sigint()  // Disable SIGINT
+    .with_sighup()                       // Enable SIGHUP handling
+    .without_sigint()                    // Disable SIGINT
     .with_custom_handler(12, "Custom signal");
 
-Daemon::builder(config)
+Daemon::new()
     .with_signal_config(signal_config)
     .run()
     .await
+# }
 ```
 
 ## Architecture
@@ -542,15 +568,15 @@ cargo bench
 
 ## Security
 
-### v1.0.0 Security Posture
+### Security Posture (v1.1.1)
 
-- **Zero Critical Vulnerabilities**: All dependencies audited and patched
-- **Bytes Overflow Fixed**: CVE-level integer overflow in `BytesMut::reserve` patched (bytes 1.11.1+)
-- **Optional Feature Auditing**: Unmaintained dependencies (async-std, instant) allowlisted and documented
-- **Memory Safety**: Safe Rust by default (`#![deny(unsafe_code)]`); Windows monitoring uses guarded `unsafe` only when explicitly enabled
-- **Signal Safety**: Async signal handling prevents race conditions and signal-induced deadlocks
-- **Resource Limits**: Configurable limits prevent resource exhaustion attacks
-- **Graceful Degradation**: Continues operating even when subsystems fail
+- **Zero unresolved vulnerabilities**: clean `cargo audit`. Three documented allow-list entries cover the optional `async-std` feature path (legacy, removal in v2.0.0) and a dev-only `rand` advisory via `proptest` — none reach production code paths.
+- **`pprof` correctness**: bumped to `0.14` in v1.0.1, resolving RUSTSEC-2024-0408 (unsound `std::slice::from_raw_parts` usage in the optional CPU profiler).
+- **Memory Safety**: Safe Rust by default (`#![deny(unsafe_code)]`); Windows monitoring uses guarded `unsafe` only when explicitly enabled via the `windows-monitoring` feature.
+- **No lock poisoning in hot paths**: v1.1.0 migrated remaining `std::sync::Mutex`/`RwLock` sites to `parking_lot` equivalents, which don't poison — eliminating an entire class of latent failure modes inside subsystem and resource tracking.
+- **Signal Safety**: async signal handling routes platform signals into the shutdown coordinator without holding locks in handlers.
+- **Resource Limits**: configurable shutdown/force/kill timeouts cap any single subsystem's ability to block teardown.
+- **Graceful Degradation**: continues operating when individual subsystems fail; restart policies are explicit per subsystem.
 
 ### Running Security Checks
 
@@ -596,7 +622,7 @@ cargo audit
 - **Windows**: Supported, with caveats listed below
 - **FreeBSD**: Likely works but not regularly tested
 
-**Windows Note:** Some optional features (pprof, renice-based scheduler hints) have Unix-specific dependencies. These features gracefully disable on Windows with working alternatives or no-ops suitable for development.
+**Windows Note:** The `profiling` feature is target-gated to Unix (v1.0.1+) — `pprof` relies on POSIX libc types (`pthread_t`, `siginfo_t`, `ucontext_t`). On Windows the feature is inert (not compiled). Heap profiling (`heap-profiling`, via `dhat`) is cross-platform. The `scheduler-hints-unix` feature is a no-op on Windows; `windows-monitoring` provides equivalent Win32 ToolHelp-based monitoring.
 
 
 <!-- API REFERENCE

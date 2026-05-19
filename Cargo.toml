@@ -1,6 +1,6 @@
 [package]
 name = "proc-daemon"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 rust-version = "1.82.0"
 readme = "README.md"
@@ -33,7 +33,37 @@ repository = "https://github.com/jamesgober/proc-daemon"
 homepage = "https://github.com/jamesgober/proc-daemon"
 
 [package.metadata.docs.rs]
-all-features = true
+# Build docs with every feature EXCEPT `async-std`.
+#
+# The `async-std` feature pulls in `signal-hook-async-std 0.2.2` →
+# `async-io 1.x` → `rustix 0.37.28`, which uses internal `rustc_*` attributes
+# (`rustc_layout_scalar_valid_range_*`) that current nightly rejects. docs.rs
+# builds on nightly with `all-features = true`, so the full-features build
+# fails. The `async-std` runtime is already marked legacy / best-effort and
+# slated for removal in v2.0.0, so excluding it from generated docs is
+# acceptable. Users who explicitly opt into `async-std` build fine on stable.
+features = [
+    "tokio",
+    "toml",
+    "metrics",
+    "console",
+    "json-logs",
+    "config-watch",
+    "ipc",
+    "backtrace",
+    "serde",
+    "mimalloc",
+    "high-res-timing",
+    "scheduler-hints",
+    "scheduler-hints-unix",
+    "lockfree-coordination",
+    "profiling",
+    "heap-profiling",
+    "mmap-config",
+]
+# docs.rs builds on Linux; windows-monitoring would gate windows-only deps
+# that aren't reachable here. Targeting Linux explicitly avoids any ambiguity.
+default-target = "x86_64-unknown-linux-gnu"
 rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]

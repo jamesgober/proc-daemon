@@ -12,6 +12,14 @@
 
 - _No changes yet._
 
+## [1.1.1] - 2026-05-19
+
+### Fixed
+
+- **docs.rs build**: `cargo doc --all-features` fails on current nightly because the `async-std` feature pulls in `signal-hook-async-std 0.2.2` → `async-io 1.x` → `rustix 0.37.28`, which uses internal `rustc_layout_scalar_valid_range_*` attributes that the nightly compiler no longer accepts. `[package.metadata.docs.rs]` switched from `all-features = true` to an explicit feature list that excludes `async-std`. The `async-std` runtime is already marked legacy and slated for removal in v2.0.0, so its omission from the rendered docs is acceptable. Users opting into `async-std` continue to build fine on stable. Also pinned the docs.rs target to `x86_64-unknown-linux-gnu` to remove ambiguity around `windows-monitoring`.
+
+No source changes — Cargo.toml metadata only.
+
 ## [1.1.0] - 2026-05-19
 
 ### Added
@@ -295,7 +303,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/jamesgober/proc-daemon/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jamesgober/proc-daemon/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc2...v1.0.0

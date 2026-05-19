@@ -23,61 +23,23 @@
 //!
 //! ## Quick Start
 //!
-//! ```rust,compile_fail
-//! // This example is marked as compile_fail to prevent freezing in doctests
-//! use proc_daemon::{Daemon, Config, Result};
+//! The simplest shape — `Daemon::new()` (v1.1.0+) is the infallible
+//! shortcut over `Config::default()`. Use `Daemon::builder(config)` when
+//! you need explicit configuration.
+//!
+//! ```no_run
+//! use proc_daemon::{Daemon, ShutdownHandle};
 //! use std::time::Duration;
 //!
-//! async fn my_service(mut shutdown: proc_daemon::ShutdownHandle) -> Result<()> {
-//!     // Limited iterations to prevent infinite loops
-//!     for _ in 0..3 {
+//! async fn my_service(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
+//!     loop {
 //!         tokio::select! {
-//!             _ = shutdown.cancelled() => {
-//!                 tracing::info!("Service shutting down gracefully");
-//!                 return Ok(());
-//!             }
-//!             _ = tokio::time::sleep(Duration::from_millis(10)) => {
-//!                 tracing::info!("Service working...");
-//!             }
-//!         }
-//!     }
-//!     Ok(())
-//! }
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<()> {
-//!     let config = Config::new()?;
-//!     
-//!     // Set a timeout for the daemon to auto-shutdown
-//!     let daemon_handle = Daemon::builder(config)
-//!         .with_subsystem_fn("main", my_service)
-//!         .run()
-//!         .await?
-//!     
-//!     // Wait for a short time, then explicitly shut down
-//!     tokio::time::sleep(Duration::from_millis(100)).await;
-//!     daemon_handle.initiate_shutdown();
-//!     Ok(())
-//! }
-//! ```
-//
-//! ```rust,ignore
-//! // This example is marked as ignore to prevent freezing in doctests
-//! use proc_daemon::{Daemon, Config, Result};
-//! use std::time::Duration;
-//!
-//! async fn my_service(mut shutdown: proc_daemon::ShutdownHandle) -> Result<()> {
-//!     // Use a counter to avoid infinite loops
-//!     let mut counter = 0;
-//!     while counter < 3 {
-//!         tokio::select! {
-//!             _ = shutdown.cancelled() => {
-//!                 tracing::info!("Service shutting down gracefully");
+//!             () = shutdown.cancelled() => {
+//!                 tracing::info!("shutting down gracefully");
 //!                 break;
 //!             }
-//!             _ = tokio::time::sleep(Duration::from_millis(10)) => {
-//!                 tracing::info!("Service working...");
-//!                 counter += 1;
+//!             () = tokio::time::sleep(Duration::from_secs(1)) => {
+//!                 tracing::info!("working…");
 //!             }
 //!         }
 //!     }
@@ -85,17 +47,35 @@
 //! }
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<()> {
-//!     let config = Config::new()?;
-//!     
-//!     // Auto-shutdown after a brief time
-//!     tokio::spawn(async {
-//!         tokio::time::sleep(Duration::from_millis(50)).await;
-//!         std::process::exit(0); // Force exit to prevent hanging
-//!     });
-//!     
+//! async fn main() -> proc_daemon::Result<()> {
+//!     Daemon::new()
+//!         .with_task("my_service", my_service)
+//!         .run()
+//!         .await
+//! }
+//! ```
+//!
+//! With explicit configuration:
+//!
+//! ```no_run
+//! use proc_daemon::{Config, Daemon, LogLevel};
+//! use std::time::Duration;
+//!
+//! #[tokio::main]
+//! async fn main() -> proc_daemon::Result<()> {
+//!     let config = Config::builder()
+//!         .name("my-service")
+//!         .log_level(LogLevel::Info)
+//!         .shutdown_timeout(Duration::from_secs(30))?
+//!         .force_shutdown_timeout(Duration::from_secs(45))?
+//!         .kill_timeout(Duration::from_secs(60))?
+//!         .build()?;
+//!
 //!     Daemon::builder(config)
-//!         .with_subsystem_fn("main", my_service)
+//!         .with_task("worker", |mut shutdown| async move {
+//!             shutdown.cancelled().await;
+//!             Ok(())
+//!         })
 //!         .run()
 //!         .await
 //! }

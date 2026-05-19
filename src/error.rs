@@ -80,7 +80,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! proc-daemon = { version = "0.1.0", features = ["backtrace"] }
+//! proc-daemon = { version = "1.1.1", features = ["backtrace"] }
 //! ```
 //!
 //! ## Serialization
@@ -89,7 +89,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! proc-daemon = { version = "0.1.0", features = ["serde"] }
+//! proc-daemon = { version = "1.1.1", features = ["serde"] }
 //! ```
 //!
 //! This allows errors to be serialized for structured logging or metrics collection.
