@@ -79,11 +79,11 @@ proc-daemon = { version = "1.0.1", features = ["full"] }
 | `scheduler-hints` | Enable scheduler tuning hooks (no-op by default) | ❌ |
 | `scheduler-hints-unix` | Best-effort Unix niceness adjustment (uses `renice`; no-op without privileges) | ❌ |
 | `lockfree-coordination` | Lock-free coordination/events via crossbeam-channel | ❌ |
-| `profiling` | Optional CPU profiling via `pprof` (Unix-preferred; Windows build issues) | ❌ |
-| `heap-profiling` | Optional heap profiling via `dhat` | ❌ |
+| `profiling` | Optional CPU profiling via `pprof` (**Unix-only** — target-gated; inert on Windows) | ❌ |
+| `heap-profiling` | Optional heap profiling via `dhat` (cross-platform) | ❌ |
 | `full` | All features enabled | ❌ |
 
-Note: `async-std` is discontinued upstream; support here is best-effort and intended for existing users. `pprof` has known Windows build incompatibilities; users on Windows can use other profiling tools or enable on Unix systems.
+Note: `async-std` is discontinued upstream; support here is best-effort and intended for existing users (slated for removal in v2.0.0). The `profiling` feature is target-gated to Unix — `pprof` relies on POSIX libc types (`pthread_t`, `siginfo_t`, `ucontext_t`) and will not be compiled on Windows. The `heap-profiling` feature (dhat) is cross-platform.
 
 ## Quick Start
 
