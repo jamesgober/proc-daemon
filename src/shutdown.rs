@@ -312,6 +312,42 @@ impl ShutdownCoordinator {
         }
     }
 
+    /// Resolves as soon as shutdown is initiated.
+    ///
+    /// Unlike [`Self::wait_for_shutdown`], this does not wait for subsystems
+    /// to mark themselves ready — it returns the moment any initiator (signal
+    /// handler, programmatic `initiate_shutdown`, etc.) flips the flag. Useful
+    /// inside `tokio::select!` blocks to break out of polling loops
+    /// immediately on shutdown.
+    #[cfg(feature = "tokio")]
+    pub async fn wait_initiated(&self) {
+        // Fast path: already initiated.
+        if self.inner.shutdown_initiated.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut rx = self.inner.shutdown_tx.subscribe();
+        // Re-check after subscribing to close the race window between the
+        // initial load and the subscription.
+        if self.inner.shutdown_initiated.load(Ordering::Acquire) {
+            return;
+        }
+        let _ = rx.recv().await;
+    }
+
+    /// Resolves as soon as shutdown is initiated (async-std variant).
+    ///
+    /// Async-std lacks a broadcast primitive, so this falls back to a short
+    /// polling loop with the same exponential backoff used elsewhere.
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    pub async fn wait_initiated(&self) {
+        let mut poll = Duration::from_millis(1);
+        let max_poll = Duration::from_millis(50);
+        while !self.inner.shutdown_initiated.load(Ordering::Acquire) {
+            async_std::task::sleep(poll).await;
+            poll = (poll * 2).min(max_poll);
+        }
+    }
+
     /// Wait for all subsystems to complete graceful shutdown.
     /// Will return when either all subsystems are ready or the timeout is reached.
     ///
