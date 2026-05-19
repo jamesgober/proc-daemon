@@ -238,6 +238,14 @@ impl SignalHandler {
         {
             self.handle_windows_signals_async_std().await
         }
+
+        #[cfg(not(any(feature = "tokio", feature = "async-std")))]
+        {
+            // No async runtime enabled: signal handling is a no-op.
+            // The daemon must be driven entirely by programmatic
+            // shutdown calls in this configuration.
+            Ok(())
+        }
     }
 
     #[cfg(feature = "tokio")]
@@ -300,6 +308,7 @@ impl SignalHandler {
     #[cfg(all(feature = "async-std", not(feature = "tokio")))]
     async fn handle_windows_signals_async_std(&self) -> Result<()> {
         use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
 
         let shutdown_flag = Arc::new(AtomicBool::new(false));
         let shutdown_flag_clone = Arc::clone(&shutdown_flag);

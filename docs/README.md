@@ -10,7 +10,7 @@
     </h1>
 </div>
 
-**Version:** 1.1.1
+**Version:** 1.1.2
 
 ## Index
 
@@ -25,6 +25,7 @@
 Per-version release notes (format modeled on the
 [error-forge](https://github.com/jamesgober/error-forge) release docs):
 
+- **[v1.1.2](./release-notes/v1.1.2.md)** *(2026-05-19, feature-matrix CI fix)*
 - **[v1.1.1](./release-notes/v1.1.1.md)** *(2026-05-19, docs.rs build fix)*
 - **[v1.1.0](./release-notes/v1.1.0.md)** *(2026-05-19, performance + ergonomics)*
 - **[v1.0.1](./release-notes/v1.0.1.md)** *(2026-05-18, maintenance + audit patch)*
