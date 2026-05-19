@@ -1,5 +1,5 @@
 <div align="center">
-    <img width="72xpx" src="./media/proc-rs-orange.svg" alt="High-Performance Process EcoSystem for Rust">
+    <img width="99" alt="Rust logo" src="https://raw.githubusercontent.com/jamesgober/rust-collection/72baabd71f00e14aa9184efcb16fa3deddda3a0a/assets/rust-logo.svg">
     <h1>
         <strong>Process Daemon</strong>
         <sup><br><sub>RUST DAEMON FRAMEWORK</sub></sup>
@@ -21,7 +21,7 @@
 
 ## Status
 
-**✅ v1.0.0 Stable Release** — Production-ready with zero critical vulnerabilities, comprehensive testing (46/46 tests passing), and cross-platform validation. See [release notes](./dev/release-notes/v1.0.0.md) for details.
+**✅ Stable Release** — Production-ready with zero critical vulnerabilities, comprehensive automated testing (36 unit + 5 integration tests passing on default features; 39 + 5 + 3 doc tests under `--all-features`), and cross-platform validation. See the [v1.0.1 release notes](./docs/release-notes/v1.0.1.md) and [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## Features
 
@@ -55,10 +55,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "1.0.0"
+proc-daemon = "1.0.1"
 
 # Optional features
-proc-daemon = { version = "1.0.0", features = ["full"] }
+proc-daemon = { version = "1.0.1", features = ["full"] }
 ```
 
 **Rust Version:** Requires Rust 1.82.0 or later
@@ -129,7 +129,7 @@ Enable the `high-res-timing` feature to access a fast, monotonic clock backed by
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0", features = ["high-res-timing"] }
+proc-daemon = { version = "1.0.1", features = ["high-res-timing"] }
 ```
 
 ```rust
@@ -149,7 +149,7 @@ Enable the `mimalloc` feature to switch the global allocator for potential perfo
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0", features = ["mimalloc"] }
+proc-daemon = { version = "1.0.1", features = ["mimalloc"] }
 ```
 
 No code changes are required—`proc-daemon` sets the global allocator when the feature is enabled.
@@ -160,7 +160,7 @@ Enable the `lockfree-coordination` feature to use a lock-free MPMC channel for c
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.0.0", features = ["lockfree-coordination"] }
+proc-daemon = { version = "1.0.1", features = ["lockfree-coordination"] }
 ```
 
 APIs:
@@ -561,8 +561,8 @@ cargo audit
 # Static analysis
 cargo clippy --all-features --all-targets -- -D warnings
 
-# Check for unsafe code
-cargo unsafe-all-targets
+# Check for unsafe code (install with: cargo install cargo-geiger)
+cargo geiger
 ```
 
 See [.cargo/audit.toml](./.cargo/audit.toml) for documented allowed vs. disallowed vulnerabilities.
@@ -630,7 +630,7 @@ cargo audit
     DEVELOPMENT &amp; CONTRIBUTION
 </h2>
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please open an issue or pull request on the [GitHub repository](https://github.com/jamesgober/proc-daemon).
 
 <br><br><br>
 

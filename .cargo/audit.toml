@@ -1,5 +1,17 @@
 [advisories]
+# Allowed advisories with rationale:
+#
+# - RUSTSEC-2025-0052: async-std is discontinued upstream. Kept as an optional
+#   feature for existing users; will be removed in v2.0.0. Not in the default
+#   build path.
+# - RUSTSEC-2024-0384: `instant` is unmaintained. Reaches us only via
+#   signal-hook-async-std → futures-lite → async-io → instant. Removed once
+#   the async-std feature is dropped in v2.0.0.
+# - RUSTSEC-2026-0097: rand 0.9 is unsound with a custom logger using
+#   rand::rng(). Pulled in via proptest (dev-only). Not used in production
+#   code; runtime daemons do not exercise rand::rng().
 ignore = [
   "RUSTSEC-2025-0052",
   "RUSTSEC-2024-0384",
+  "RUSTSEC-2026-0097",
 ]

@@ -130,13 +130,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Security audit
-        uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+
       - name: Install cargo-audit
         run: cargo install cargo-audit
+
       - name: Run security audit
         run: cargo audit
 
@@ -216,10 +217,18 @@ jobs:
       # Regenerate Cargo.lock to ensure compatibility
       - name: Delete existing Cargo.lock
         run: rm -f Cargo.lock
-        
+
       - name: Regenerate Cargo.lock with MSRV
         run: cargo generate-lockfile
-        
+
+      # Pin transitive deps that have raised their MSRV beyond ours.
+      # Cargo 1.82 lacks MSRV-aware resolver (stabilized in 1.84), so newly
+      # published versions can break the regenerated lockfile. Drop these
+      # pins when MSRV is raised.
+      - name: Pin MSRV-incompatible transitive deps
+        run: |
+          cargo update -p indexmap --precise 2.10.0 || true
+
       - name: Check MSRV compatibility (lib only, no default features)
         run: cargo check --lib --no-default-features
 

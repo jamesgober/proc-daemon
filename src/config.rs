@@ -411,9 +411,7 @@ impl Config {
     /// Get the number of worker threads to use.
     pub fn worker_threads(&self) -> usize {
         if self.performance.worker_threads == 0 {
-            std::thread::available_parallelism()
-                .map(std::num::NonZeroUsize::get)
-                .unwrap_or(4)
+            std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get)
         } else {
             self.performance.worker_threads
         }
@@ -670,11 +668,8 @@ mod tests {
     #[test]
     fn test_duration_helpers() {
         let config = Config::default();
-        assert_eq!(config.shutdown_timeout(), Duration::from_millis(5000));
-        assert_eq!(
-            config.force_shutdown_timeout(),
-            Duration::from_millis(10_000)
-        );
-        assert_eq!(config.kill_timeout(), Duration::from_millis(15_000));
+        assert_eq!(config.shutdown_timeout(), Duration::from_secs(5));
+        assert_eq!(config.force_shutdown_timeout(), Duration::from_secs(10));
+        assert_eq!(config.kill_timeout(), Duration::from_secs(15));
     }
 }
