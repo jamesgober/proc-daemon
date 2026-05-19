@@ -10,10 +10,11 @@ use crate::pool::{StringPool, VecPool};
 use crate::shutdown::{ShutdownCoordinator, ShutdownHandle};
 
 use dashmap::DashMap;
+use parking_lot::Mutex;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 #[allow(unused_imports)]
 use tracing::{error, info, instrument, warn};
@@ -211,13 +212,9 @@ impl SubsystemManager {
     }
 
     /// Enable coordination events. Subsequent state changes will emit `SubsystemEvent`s.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn enable_events(&self) {
-        let mut tx_guard = self.events_tx.lock().unwrap();
-        let mut rx_guard = self.events_rx.lock().unwrap();
+        let mut tx_guard = self.events_tx.lock();
+        let mut rx_guard = self.events_rx.lock();
         if tx_guard.is_some() || rx_guard.is_some() {
             return;
         }
@@ -231,12 +228,8 @@ impl SubsystemManager {
     }
 
     /// Try to fetch the next coordination event without blocking.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn try_next_event(&self) -> Option<SubsystemEvent> {
-        let rx_guard = self.events_rx.lock().unwrap();
+        let rx_guard = self.events_rx.lock();
         rx_guard
             .as_ref()
             .and_then(|rx| coord::chan::try_recv(rx).ok())
@@ -284,10 +277,6 @@ impl SubsystemManager {
     }
 
     /// Register a subsystem using a closure.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register_fn<F, Fut>(&self, name: &str, func: F) -> SubsystemId
     where
         F: Fn(ShutdownHandle) -> Fut + Send + Sync + 'static,
@@ -325,10 +314,6 @@ impl SubsystemManager {
     }
 
     /// Register a closure as a subsystem.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register_closure<F>(&self, closure_subsystem: F, name: &str) -> SubsystemId
     where
         F: Fn(ShutdownHandle) -> Pin<Box<dyn Future<Output = Result<()>> + Send>>
@@ -377,10 +362,6 @@ impl SubsystemManager {
     /// # Errors
     ///
     /// Returns a `Error::subsystem` error if the subsystem with the specified ID is not found.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     #[instrument(skip(self), fields(subsystem_id = id))]
     pub async fn start_subsystem(&self, id: SubsystemId) -> Result<()> {
         let entry = self
@@ -414,14 +395,14 @@ impl SubsystemManager {
                 // Update state based on result
                 match &result {
                     Ok(()) => {
-                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        let mut metadata = entry_clone.metadata.lock();
                         metadata.state = SubsystemState::Stopped;
                         metadata.stopped_at = Some(Instant::now());
                         drop(metadata);
                         info!(subsystem_id = id_clone, subsystem_name = %subsystem_name_clone, "Subsystem stopped successfully");
                     }
                     Err(e) => {
-                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        let mut metadata = entry_clone.metadata.lock();
                         metadata.state = SubsystemState::Failed;
                         metadata.last_error = Some(e.to_string());
                         metadata.stopped_at = Some(Instant::now());
@@ -433,7 +414,7 @@ impl SubsystemManager {
                 result
             });
 
-            *entry.task_handle.lock().unwrap() = Some(task);
+            *entry.task_handle.lock() = Some(task);
         }
 
         #[cfg(all(feature = "async-std", not(feature = "tokio")))]
@@ -450,14 +431,14 @@ impl SubsystemManager {
 
                 match &result {
                     Ok(()) => {
-                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        let mut metadata = entry_clone.metadata.lock();
                         metadata.state = SubsystemState::Stopped;
                         metadata.stopped_at = Some(Instant::now());
                         drop(metadata);
                         info!(subsystem_id = id_clone, subsystem_name = %subsystem_name_clone, "Subsystem stopped successfully");
                     }
                     Err(e) => {
-                        let mut metadata = entry_clone.metadata.lock().unwrap();
+                        let mut metadata = entry_clone.metadata.lock();
                         metadata.state = SubsystemState::Failed;
                         metadata.last_error = Some(e.to_string());
                         metadata.stopped_at = Some(Instant::now());
@@ -469,7 +450,7 @@ impl SubsystemManager {
                 result
             });
 
-            *entry.task_handle.lock().unwrap() = Some(task);
+            *entry.task_handle.lock() = Some(task);
         }
 
         self.update_state_with_timestamp(id, SubsystemState::Running, Some(Instant::now()), None);
@@ -479,10 +460,6 @@ impl SubsystemManager {
     }
 
     /// Start all registered subsystems.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     ///
     /// # Errors
     ///
@@ -577,7 +554,7 @@ impl SubsystemManager {
         subsystem_name: &str,
     ) -> bool {
         let task_handle_opt = {
-            let mut task_handle_guard = entry.task_handle.lock().unwrap();
+            let mut task_handle_guard = entry.task_handle.lock();
             task_handle_guard.take()
         };
 
@@ -622,7 +599,7 @@ impl SubsystemManager {
         subsystem_name: &str,
     ) -> bool {
         let task_handle_opt = {
-            let mut task_handle_guard = entry.task_handle.lock().unwrap();
+            let mut task_handle_guard = entry.task_handle.lock();
             task_handle_guard.take()
         };
 
@@ -648,10 +625,6 @@ impl SubsystemManager {
     }
 
     /// Stop all subsystems gracefully.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     ///
     /// # Errors
     ///
@@ -698,10 +671,6 @@ impl SubsystemManager {
     ///
     /// Returns a `Error::subsystem` error if the subsystem with the specified ID is not found.
     /// May also return any error that occurs during the start operation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     pub async fn restart_subsystem(&self, id: SubsystemId) -> Result<()> {
         let entry = self
             .subsystems
@@ -717,7 +686,7 @@ impl SubsystemManager {
 
         // Increment restart count
         {
-            let mut metadata = entry.metadata.lock().unwrap();
+            let mut metadata = entry.metadata.lock();
             metadata.restart_count += 1;
         }
 
@@ -747,10 +716,6 @@ impl SubsystemManager {
     }
 
     /// Get statistics about all subsystems.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any metadata mutex is poisoned.
     pub fn get_stats(&self) -> SubsystemStats {
         // Get necessary data using DashMap iteration (lock-free reads)
         let mut subsystem_metadata = self.metadata_pool.get();
@@ -764,7 +729,7 @@ impl SubsystemManager {
 
         // Clone all metadata without global lock
         for entry in self.subsystems.iter() {
-            subsystem_metadata.push(entry.metadata.lock().unwrap().clone());
+            subsystem_metadata.push(entry.metadata.lock().clone());
         }
 
         // Process data without holding the lock
@@ -804,21 +769,13 @@ impl SubsystemManager {
     /// Get metadata for a specific subsystem.
     ///
     /// Returns `None` if the subsystem with the specified ID is not found.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     pub fn get_subsystem_metadata(&self, id: SubsystemId) -> Option<SubsystemMetadata> {
         self.subsystems
             .get(&id)
-            .map(|entry| entry.metadata.lock().unwrap().clone())
+            .map(|entry| entry.metadata.lock().clone())
     }
 
     /// Get all metadata for all subsystems.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any metadata mutex is poisoned.
     pub fn get_all_metadata(&self) -> Vec<SubsystemMetadata> {
         // Use the pooled vector instead of allocating
         let mut metadata_list = self.metadata_pool.get();
@@ -832,7 +789,7 @@ impl SubsystemManager {
 
         // Copy all metadata without global lock
         for entry in self.subsystems.iter() {
-            metadata_list.push(entry.metadata.lock().unwrap().clone());
+            metadata_list.push(entry.metadata.lock().clone());
         }
 
         // Convert pooled vector to standard Vec before returning
@@ -845,10 +802,6 @@ impl SubsystemManager {
     }
 
     /// Run health checks on all subsystems and return the results.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any metadata mutex is poisoned.
     pub fn run_health_checks(&self) -> Vec<(SubsystemId, String, bool)> {
         // Collect the necessary information using DashMap (lock-free reads)
         let mut subsystem_data = self.vec_pool.get();
@@ -864,7 +817,7 @@ impl SubsystemManager {
         for entry_ref in self.subsystems.iter() {
             let id = *entry_ref.key();
             let entry = entry_ref.value();
-            let state = entry.metadata.lock().unwrap().state;
+            let state = entry.metadata.lock().state;
 
             // Use cached name (zero-copy)
             let name = self
@@ -901,19 +854,11 @@ impl SubsystemManager {
     }
 
     /// Update the state of a subsystem.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     fn update_state(&self, id: SubsystemId, new_state: SubsystemState) {
         self.update_state_with_timestamp(id, new_state, None, None);
     }
 
     /// Update the state of a subsystem with error information.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     #[allow(dead_code)]
     fn update_state_with_error(&self, id: SubsystemId, new_state: SubsystemState, error: String) {
         // Get entry from DashMap (lock-free)
@@ -921,7 +866,7 @@ impl SubsystemManager {
 
         // Update metadata if entry exists
         if let Some(entry) = entry_opt {
-            let mut metadata = entry.metadata.lock().unwrap();
+            let mut metadata = entry.metadata.lock();
             metadata.state = new_state;
             metadata.last_error = Some(error);
             if new_state == SubsystemState::Stopped || new_state == SubsystemState::Failed {
@@ -940,7 +885,7 @@ impl SubsystemManager {
     ) {
         // Get entry without global lock
         if let Some(entry) = self.subsystems.get(&id) {
-            let mut metadata = entry.metadata.lock().unwrap();
+            let mut metadata = entry.metadata.lock();
             metadata.state = new_state;
             if let Some(started) = started_at {
                 metadata.started_at = Some(started);
@@ -963,7 +908,7 @@ impl SubsystemManager {
 
     /// Publish an event to the coordination channel if enabled.
     fn publish_event(&self, event: SubsystemEvent) {
-        let tx_opt = self.events_tx.lock().unwrap().as_ref().cloned();
+        let tx_opt = self.events_tx.lock().as_ref().cloned();
         if let Some(tx) = tx_opt {
             // Ignore send errors (e.g., no receiver)
             let _ = tx.send(event);
@@ -971,15 +916,11 @@ impl SubsystemManager {
     }
 
     /// Check if a subsystem should be restarted based on its policy.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     #[allow(dead_code)]
     fn should_restart(entry: &SubsystemEntry) -> bool {
         // Get what we need from metadata and release lock early
         let (restart_policy, state, restart_count) = {
-            let metadata = entry.metadata.lock().unwrap();
+            let metadata = entry.metadata.lock();
             (
                 metadata.restart_policy,
                 metadata.state,
@@ -996,14 +937,10 @@ impl SubsystemManager {
     }
 
     /// Calculate restart delay based on policy.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the metadata mutex is poisoned.
     fn calculate_restart_delay(entry: &SubsystemEntry) -> Duration {
         // Extract only what we need from metadata and drop the lock early
         let (restart_policy, restart_count) = {
-            let metadata = entry.metadata.lock().unwrap();
+            let metadata = entry.metadata.lock();
             (metadata.restart_policy, metadata.restart_count)
         };
 
@@ -1046,12 +983,8 @@ impl SubsystemManager {
     /// `lockfree-coordination` feature is enabled and events have been
     /// previously enabled via `enable_events()`.
     #[cfg(feature = "lockfree-coordination")]
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn subscribe_events(&self) -> Option<coord::chan::Receiver<SubsystemEvent>> {
-        self.events_rx.lock().unwrap().as_ref().cloned()
+        self.events_rx.lock().as_ref().cloned()
     }
 }
 

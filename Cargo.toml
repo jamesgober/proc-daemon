@@ -1,6 +1,6 @@
 [package]
 name = "proc-daemon"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 rust-version = "1.82.0"
 readme = "README.md"
@@ -95,7 +95,7 @@ num_cpus = "1.16"         # CPU count detection
 metrics = { version = "0.17", optional = true }
 
 # Console/terminal support (optional)
-console = { version = "0.15", optional = true }
+console = { version = "0.16", optional = true }
 
 # JSON logging support (optional)
 serde_json = { version = "1.0", optional = true }

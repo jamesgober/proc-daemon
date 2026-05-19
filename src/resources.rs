@@ -69,8 +69,9 @@ use crate::error::{Error, Result};
 #[cfg(feature = "metrics")]
 use crate::metrics::MetricsCollector;
 use arc_swap::ArcSwap;
+use parking_lot::RwLock;
 use std::collections::VecDeque;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 // Runtime-specific JoinHandle types
@@ -321,11 +322,6 @@ impl ResourceTracker {
     ///
     /// Returns an error if the process ID cannot be determined or
     /// if there's an issue with the system APIs when gathering resource metrics.
-    ///
-    /// # Panics
-    ///
-    /// May panic if the `RwLock` for history is poisoned in an extremely rare concurrent scenario.
-    /// This is a safety guarantee but should not happen in normal operation due to panic guards.
     #[cfg(all(feature = "tokio", not(feature = "async-std")))]
     pub fn start(&mut self) -> Result<()> {
         if self.task_handle.is_some() {
@@ -363,7 +359,7 @@ impl ResourceTracker {
 
                     // Update history with minimal lock time
                     {
-                        let mut hist = usage_history.write().unwrap();
+                        let mut hist = usage_history.write();
                         hist.push_back(usage.clone());
                         // Trim excess entries in one loop
                         while hist.len() > max_history {
@@ -447,7 +443,7 @@ impl ResourceTracker {
 
                     // Update history with minimal lock time
                     {
-                        let mut hist = usage_history.write().unwrap();
+                        let mut hist = usage_history.write();
                         hist.push_back(usage.clone());
                         // Trim excess entries in one loop
                         while hist.len() > max_history {
@@ -521,9 +517,7 @@ impl ResourceTracker {
     /// Returns a copy of the resource usage history
     #[must_use]
     pub fn history(&self) -> Vec<ResourceUsage> {
-        self.history
-            .read()
-            .map_or_else(|_| Vec::new(), |history| history.iter().cloned().collect())
+        self.history.read().iter().cloned().collect()
     }
 
     /// Samples the resource usage for the given process ID

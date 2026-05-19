@@ -4,6 +4,7 @@
 //! high-performance, resilient daemon services. The builder pattern allows for
 //! flexible configuration while maintaining zero-copy performance characteristics.
 
+use parking_lot::Mutex;
 use std::future::Future;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -83,7 +84,7 @@ struct RotatingFileWriterInner {
 
 #[derive(Clone)]
 struct RotatingFileWriter {
-    inner: Arc<std::sync::Mutex<RotatingFileWriterInner>>,
+    inner: Arc<Mutex<RotatingFileWriterInner>>,
 }
 
 impl RotatingFileWriter {
@@ -98,7 +99,7 @@ impl RotatingFileWriter {
         let max_files = max_files.unwrap_or(0);
 
         Ok(Self {
-            inner: Arc::new(std::sync::Mutex::new(RotatingFileWriterInner {
+            inner: Arc::new(Mutex::new(RotatingFileWriterInner {
                 file,
                 path,
                 max_size,
@@ -138,15 +139,12 @@ impl RotatingFileWriter {
 }
 
 struct RotatingFileWriterGuard {
-    inner: Arc<std::sync::Mutex<RotatingFileWriterInner>>,
+    inner: Arc<Mutex<RotatingFileWriterInner>>,
 }
 
 impl io::Write for RotatingFileWriterGuard {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| io::Error::other("rotating log writer mutex poisoned"))?;
+        let mut inner = self.inner.lock();
 
         if inner.size.saturating_add(buf.len() as u64) > inner.max_size {
             RotatingFileWriter::rotate_locked(&mut inner)?;
@@ -159,10 +157,7 @@ impl io::Write for RotatingFileWriterGuard {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let mut inner = self
-            .inner
-            .lock()
-            .map_err(|_| io::Error::other("rotating log writer mutex poisoned"))?;
+        let mut inner = self.inner.lock();
         let result = inner.file.flush();
         drop(inner);
         result
@@ -203,6 +198,31 @@ impl SignalHandlerKind {
 }
 
 impl Daemon {
+    /// Create a new daemon builder with default configuration.
+    ///
+    /// Shortcut for `Daemon::builder(Config::default())`. The default config
+    /// is constructed to pass validation, so this constructor is infallible.
+    /// Use [`Self::builder`] when you have an explicit `Config`.
+    ///
+    /// ```no_run
+    /// use proc_daemon::Daemon;
+    ///
+    /// # async fn example() -> proc_daemon::Result<()> {
+    /// Daemon::new()
+    ///     .with_task("worker", |mut shutdown| async move {
+    ///         shutdown.cancelled().await;
+    ///         Ok(())
+    ///     })
+    ///     .run()
+    ///     .await
+    /// # }
+    /// ```
+    #[must_use]
+    #[allow(clippy::new_ret_no_self)] // intentional — see docs; `Daemon` is built via `DaemonBuilder`.
+    pub fn new() -> DaemonBuilder {
+        DaemonBuilder::new(Config::default())
+    }
+
     /// Create a new daemon builder with the provided configuration.
     #[must_use]
     pub fn builder(config: Config) -> DaemonBuilder {
@@ -211,9 +231,13 @@ impl Daemon {
 
     /// Create a new daemon with default configuration.
     ///
+    /// Retained for backward compatibility. Prefer [`Self::new`] — the default
+    /// configuration is always valid, so the `Result` return is unnecessary.
+    ///
     /// # Errors
     ///
-    /// Will return an error if the default configuration is invalid.
+    /// Will return an error only if a future revision of `Config::default()`
+    /// produces a config that fails validation.
     pub fn with_defaults() -> Result<DaemonBuilder> {
         let config = Config::new()?;
         Ok(Self::builder(config))
@@ -227,6 +251,7 @@ impl Daemon {
     /// Returns an error if logging initialization fails, configuration validation fails,
     /// subsystem startup fails, or if there is an error during the shutdown sequence.
     #[instrument(skip(self), fields(daemon_name = %self.config.name))]
+    #[allow(clippy::too_many_lines)] // single state-machine; splitting harms locality
     pub async fn run(mut self) -> Result<()> {
         info!(daemon_name = %self.config.name, "Starting daemon");
         self.started_at = Some(Instant::now());
@@ -301,15 +326,32 @@ impl Daemon {
                 }
             }
 
-            // Sleep for a short interval
+            // Wait for the next health-check tick OR an incoming shutdown.
+            // Racing the two prevents shutdown latency from being bounded by
+            // the health-check interval (previously up to 30s of dead time).
+            let interval = self.config.health_check_interval();
+
             #[cfg(feature = "tokio")]
-            tokio::time::sleep(self.config.health_check_interval()).await;
+            {
+                tokio::select! {
+                    () = self.shutdown_coordinator.wait_initiated() => break,
+                    () = tokio::time::sleep(interval) => {}
+                }
+            }
 
             #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-            async_std::task::sleep(self.config.health_check_interval()).await;
+            {
+                use futures::future::{select, Either};
+                use std::pin::pin;
+                let sleep_fut = pin!(async_std::task::sleep(interval));
+                let wait_fut = pin!(self.shutdown_coordinator.wait_initiated());
+                if let Either::Left(_) = select(wait_fut, sleep_fut).await {
+                    break;
+                }
+            }
 
             #[cfg(not(any(feature = "tokio", feature = "async-std")))]
-            std::thread::sleep(self.config.health_check_interval());
+            std::thread::sleep(interval);
         }
 
         // Graceful shutdown sequence
@@ -547,6 +589,13 @@ pub struct DaemonBuilder {
     signal_config: Option<SignalConfig>,
     enable_signals: bool,
     config_path: Option<PathBuf>,
+}
+
+impl Default for DaemonBuilder {
+    /// Equivalent to [`Daemon::new()`] — a builder over [`Config::default()`].
+    fn default() -> Self {
+        Self::new(Config::default())
+    }
 }
 
 impl DaemonBuilder {

@@ -12,6 +12,27 @@
 
 - _No changes yet._
 
+## [1.1.0] - 2026-05-19
+
+### Added
+
+- **`Daemon::new()`** — infallible constructor returning a `DaemonBuilder` over `Config::default()`. Eliminates the `Config::new()?` → `Daemon::builder(config)` boilerplate for the common case. The existing `Daemon::with_defaults() -> Result<DaemonBuilder>` is retained for backward compatibility but now documents `Daemon::new` as the preferred entry point.
+- **`impl Default for DaemonBuilder`** — equivalent to `Daemon::new()`. Enables `DaemonBuilder::default()` and Default-bound generic contexts.
+- **`ShutdownCoordinator::wait_initiated()`** — async method that resolves the moment shutdown is initiated (without waiting for subsystems to mark themselves ready). Used internally by the daemon main loop; also useful in custom integration patterns that want a `tokio::select!` arm for shutdown.
+
+### Changed
+
+- **Performance: `parking_lot` swap in hot paths.** Replaced `std::sync::Mutex` / `std::sync::RwLock` with `parking_lot::Mutex` / `parking_lot::RwLock` in `src/subsystem.rs`, `src/resources.rs`, and `src/daemon.rs` (`RotatingFileWriter`). `parking_lot` was already a dependency for `pool.rs`, `shutdown.rs`, and `metrics.rs`; this completes the migration. Wins: 2–3× faster locking under contention, no poisoning concerns, eliminated ~24 `.lock().unwrap()` / `.read().unwrap()` / `.write().unwrap()` calls plus 17 stale `# Panics ... mutex poisoned` doc blocks that were never actually reachable with `parking_lot`.
+- **Performance: shutdown latency.** The daemon main loop previously polled subsystem health and then slept `health_check_interval` (default 30s) before re-checking the shutdown flag — meaning shutdown could be delayed by up to a full interval. The loop now races the sleep against `ShutdownCoordinator::wait_initiated()` via `tokio::select!`, so shutdown completes within microseconds of being initiated regardless of the configured interval.
+- **`console` dep**: 0.15 → 0.16 (semver-compatible).
+
+### Internal
+
+- 17 `# Panics ... mutex is poisoned` doc blocks removed from `src/subsystem.rs` — `parking_lot::Mutex` doesn't poison, so these clauses were incorrect.
+- `clippy::significant_drop_tightening` resolved by explicit `drop(inner)` calls in `RotatingFileWriterGuard::write` / `flush`.
+- `clippy::new_ret_no_self` allow on `Daemon::new()` with rationale (intentional builder-returning constructor, documented).
+- `clippy::too_many_lines` allow on `Daemon::run` (single state-machine; splitting harms locality).
+
 ## [1.0.1] - 2026-05-18
 
 ### Fixed
@@ -274,7 +295,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/jamesgober/proc-daemon/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc2...v1.0.0
 [1.0.0-RC2]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.1...v1.0.0-rc2
