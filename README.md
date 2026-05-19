@@ -632,14 +632,6 @@ cargo audit
 
 We welcome contributions! Please open an issue or pull request on the [GitHub repository](https://github.com/jamesgober/proc-daemon).
 
-<br><br><br>
-
-<div align="center">
-    <img width="72px" src="./media/rust.svg" alt="Rust Logo">
-    <br><sup><b>Built with Rust.</b></sup>
-</div>
-
-<br>
 <br>
 
 
