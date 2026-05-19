@@ -739,27 +739,24 @@ impl ResourceTracker {
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
     #[allow(unsafe_code)]
     fn get_memory_windows(pid: u32) -> Result<u64> {
+        use std::ptr::addr_of_mut;
         let mut pmc = PROCESS_MEMORY_COUNTERS::default();
         let handle =
             unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, false, pid) }.map_err(|e| {
                 Error::runtime_with_source(
-                    format!("Failed to open process {} for memory stats", pid),
+                    format!("Failed to open process {pid} for memory stats"),
                     e,
                 )
             })?;
 
-        let result = unsafe {
-            GetProcessMemoryInfo(
-                handle,
-                &mut pmc,
-                std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
-            )
-        }
-        .map_err(|e| {
-            Error::runtime_with_source("Failed to get process memory info".to_string(), e)
-        });
+        let pmc_size =
+            u32::try_from(std::mem::size_of::<PROCESS_MEMORY_COUNTERS>()).unwrap_or(u32::MAX);
+        let result =
+            unsafe { GetProcessMemoryInfo(handle, addr_of_mut!(pmc), pmc_size) }.map_err(|e| {
+                Error::runtime_with_source("Failed to get process memory info".to_string(), e)
+            });
 
-        unsafe { CloseHandle(handle) };
+        let _ = unsafe { CloseHandle(handle) };
         result?;
 
         Ok(u64::try_from(pmc.WorkingSetSize).unwrap_or(pmc.WorkingSetSize as u64))
@@ -779,15 +776,13 @@ impl ResourceTracker {
         last_cpu_time: &mut f64,
         last_timestamp: &mut Instant,
     ) -> Result<(f64, u32)> {
+        use std::ptr::addr_of_mut;
         let mut cpu_percent = 0.0;
         let mut thread_count = 0;
 
         let handle =
             unsafe { OpenProcess(PROCESS_QUERY_INFORMATION, false, pid) }.map_err(|e| {
-                Error::runtime_with_source(
-                    format!("Failed to open process {} for CPU stats", pid),
-                    e,
-                )
+                Error::runtime_with_source(format!("Failed to open process {pid} for CPU stats"), e)
             })?;
 
         // Get thread count by enumerating threads using ToolHelp snapshot
@@ -800,14 +795,14 @@ impl ResourceTracker {
             })?;
 
             let mut entry: THREADENTRY32 = std::mem::zeroed();
-            entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+            entry.dwSize = u32::try_from(std::mem::size_of::<THREADENTRY32>()).unwrap_or(u32::MAX);
 
-            if Thread32First(snapshot, &mut entry).is_ok() {
+            if Thread32First(snapshot, addr_of_mut!(entry)).is_ok() {
                 loop {
                     if entry.th32OwnerProcessID == pid {
                         thread_count += 1;
                     }
-                    if Thread32Next(snapshot, &mut entry).is_err() {
+                    if Thread32Next(snapshot, addr_of_mut!(entry)).is_err() {
                         break;
                     }
                 }
@@ -825,16 +820,16 @@ impl ResourceTracker {
         let result = unsafe {
             GetProcessTimes(
                 handle,
-                &mut creation_time,
-                &mut exit_time,
-                &mut kernel_time,
-                &mut user_time,
+                addr_of_mut!(creation_time),
+                addr_of_mut!(exit_time),
+                addr_of_mut!(kernel_time),
+                addr_of_mut!(user_time),
             )
         };
 
         if result.is_ok() {
-            let kernel_ns = Self::filetime_to_ns(&kernel_time);
-            let user_ns = Self::filetime_to_ns(&user_time);
+            let kernel_ns = Self::filetime_to_ns(kernel_time);
+            let user_ns = Self::filetime_to_ns(user_time);
             let total_time = (kernel_ns + user_ns) as f64 / 1_000_000_000.0; // Convert to seconds
 
             let now = Instant::now();
@@ -854,7 +849,7 @@ impl ResourceTracker {
             *last_timestamp = now;
         }
 
-        unsafe { CloseHandle(handle) };
+        let _ = unsafe { CloseHandle(handle) };
 
         Ok((cpu_percent, thread_count))
     }
@@ -871,11 +866,11 @@ impl ResourceTracker {
     }
 
     #[cfg(all(target_os = "windows", feature = "windows-monitoring"))]
-    fn filetime_to_ns(ft: &windows::Win32::Foundation::FILETIME) -> u64 {
-        // Convert Windows FILETIME to nanoseconds
-        let high = (ft.dwHighDateTime as u64) << 32;
-        let low = ft.dwLowDateTime as u64;
-        // Windows ticks are 100ns intervals
+    fn filetime_to_ns(ft: windows::Win32::Foundation::FILETIME) -> u64 {
+        // Convert Windows FILETIME to nanoseconds.
+        // Windows ticks are 100ns intervals.
+        let high = u64::from(ft.dwHighDateTime) << 32;
+        let low = u64::from(ft.dwLowDateTime);
         (high + low) * 100
     }
 }

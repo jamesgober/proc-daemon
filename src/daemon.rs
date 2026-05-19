@@ -92,7 +92,7 @@ impl RotatingFileWriter {
             .create(true)
             .append(true)
             .open(&path)?;
-        let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+        let size = file.metadata().map_or(0, |m| m.len());
 
         let max_size = max_size.unwrap_or(u64::MAX);
         let max_files = max_files.unwrap_or(0);

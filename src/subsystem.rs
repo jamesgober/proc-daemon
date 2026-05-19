@@ -1194,7 +1194,7 @@ mod tests {
 
             // Stop the subsystem with a smaller timeout
             let stop_result =
-                tokio::time::timeout(Duration::from_millis(1000), manager.stop_subsystem(id)).await;
+                tokio::time::timeout(Duration::from_secs(1), manager.stop_subsystem(id)).await;
 
             assert!(stop_result.is_ok());
 

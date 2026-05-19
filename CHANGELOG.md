@@ -12,6 +12,42 @@
 
 - _No changes yet._
 
+## [1.0.1] - 2026-05-18
+
+### Fixed
+
+- **Windows build**: `cargo build --all-features` now compiles on Windows. `pprof` is moved under `[target.'cfg(unix)'.dependencies]` because it relies on POSIX libc types (`pthread_t`, `siginfo_t`, `ucontext_t`). The `profiling` feature still exposes the CPU profiler on Unix; `heap-profiling` remains cross-platform via `dhat`.
+- **Security**: `pprof` upgraded from `0.13` to `0.14`, resolving RUSTSEC-2024-0408 (unsound `std::slice::from_raw_parts` usage). The 1.0.0 CHANGELOG claimed this was done in 1.0.0-RC2; it was not — fixed here.
+- **Clippy on Rust 1.95**: cleared all 8 stable-toolchain warnings:
+  - `map_unwrap_or` in `src/config.rs` and `src/daemon.rs`
+  - `duration_suboptimal_units` (e.g. `Duration::from_millis(5000)` → `Duration::from_secs(5)`) in `src/config.rs` and `src/subsystem.rs`
+- **Windows monitoring lints** (`windows-monitoring` feature): replaced `&mut local` with `addr_of_mut!`, switched `as` casts to `From`/`TryFrom`, inlined `format!` args, added missing `# Errors` docs in `src/ipc.rs`, and corrected the inner/outer attribute ordering on the Windows IPC module.
+- **README accuracy**: removed broken links to `./dev/release-notes/v1.0.0.md` and `CONTRIBUTING.md` (neither exists in-tree), replaced the non-existent `cargo unsafe-all-targets` invocation with `cargo geiger`, and corrected the test-count claim.
+- **CI workflow**:
+  - `MSRV Check`: pin `indexmap` to `2.10.0` after `cargo generate-lockfile` because `indexmap 2.14.0+` requires the `edition2024` Cargo feature (stabilized in Rust 1.85), which Cargo 1.82 cannot parse. The MSRV-aware resolver landed in Cargo 1.84; this pin is a temporary backstop until MSRV is raised.
+  - `Security Audit`: fixed a malformed step — the `Security audit` step was incorrectly using `actions/checkout@v4` instead of installing the toolchain; corrected to install Rust before invoking `cargo audit`.
+
+### Changed
+
+- **Crate metadata** (crates.io visibility):
+  - Description rewritten to lead with "async daemon framework" and mention Tokio explicitly.
+  - Keywords: `systemd` (misleading — no systemd integration) replaced with `async`.
+  - Categories: `network-programming` (incorrect — no networking in this crate) and `development-tools` (too generic) replaced with `asynchronous` and `command-line-utilities`.
+- **Dependency bumps** (semver-compatible):
+  - `tokio` 1.37 → 1.52
+  - `parking_lot` 0.12 → 0.12.5
+  - `arc-swap` 1.7 → 1.9
+  - `dashmap` 6.0 → 6.2
+  - `once_cell` 1.19 → 1.21
+  - `fastrand` 2.0 → 2.4
+  - `pprof` 0.13 → 0.14
+  - `proptest` (dev) 1.6 → 1.11 (also resolves rand-tree warnings)
+- **`.cargo/audit.toml`**: added rationale comments for each allowlist entry. `RUSTSEC-2025-0052` (async-std discontinued) and `RUSTSEC-2024-0384` (instant unmaintained) remain allow-listed for the optional `async-std` feature path (to be removed in v2.0.0). Added `RUSTSEC-2026-0097` (dev-only rand soundness via proptest 1.11).
+
+### Removed
+
+- `dhat` dep declaration no longer hidden behind a quoted bare key (`"dhat"` → `dhat`).
+
 ## [1.0.0] - 2026-02-23
 
 ### Added
@@ -238,7 +274,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc2...v1.0.0
 [1.0.0-RC2]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0-rc.1...v1.0.0-rc2
 [1.0.0-RC.1]: https://github.com/jamesgober/proc-daemon/compare/v0.9.0...v1.0.0-rc.1

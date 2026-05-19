@@ -132,7 +132,7 @@ pub use subsystem::{RestartPolicy, Subsystem, SubsystemId};
 #[cfg(feature = "metrics")]
 pub mod metrics;
 
-#[cfg(feature = "profiling")]
+#[cfg(any(feature = "profiling", feature = "heap-profiling"))]
 pub mod profiling;
 
 #[cfg(feature = "ipc")]

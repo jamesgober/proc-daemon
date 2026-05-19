@@ -77,10 +77,9 @@ pub mod unix {
     }
 }
 
-#[cfg(windows)]
 /// Windows-specific IPC primitives implemented with Tokio named pipes.
+#[cfg(windows)]
 pub mod windows {
-    //! Tokio-based Windows named pipe IPC.
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::windows::named_pipe::{
         ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
@@ -89,6 +88,11 @@ pub mod windows {
     /// Create a new named pipe server at the given pipe name (e.g., \\?\pipe\proc-daemon).
     ///
     /// Returns a server handle that can `connect().await` to wait for a client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the named pipe cannot be created (e.g., name in use,
+    /// invalid pipe name, or insufficient privileges).
     pub fn create_server<S: AsRef<str>>(name: S) -> std::io::Result<NamedPipeServer> {
         ServerOptions::new()
             .first_pipe_instance(true)
@@ -96,16 +100,28 @@ pub mod windows {
     }
 
     /// Wait asynchronously for a client to connect to the given server instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying pipe handle reports a connection failure.
     pub async fn server_connect(server: &NamedPipeServer) -> std::io::Result<()> {
         server.connect().await
     }
 
     /// Create a new named pipe client and connect to the given pipe name.
-    pub async fn connect<S: AsRef<str>>(name: S) -> std::io::Result<NamedPipeClient> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pipe cannot be opened (e.g., not found or busy).
+    pub fn connect<S: AsRef<str>>(name: S) -> std::io::Result<NamedPipeClient> {
         ClientOptions::new().open(name.as_ref())
     }
 
     /// Simple echo handler demonstrating async read/write on a server connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from or writing to the pipe fails.
     pub async fn echo_once(mut server: NamedPipeServer) -> std::io::Result<()> {
         let mut buf = [0u8; 1024];
         let n = server.read(&mut buf).await?;

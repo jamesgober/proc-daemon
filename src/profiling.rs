@@ -1,60 +1,66 @@
-//! Optional profiling utilities (CPU and heap) behind the `profiling` feature.
+//! Optional profiling utilities (CPU and heap) behind the `profiling` and
+//! `heap-profiling` features.
 //!
-//! Safe-by-default helpers to start/stop CPU profiling to a file and to capture
-//! a heap profile snapshot on demand. No runtime overhead unless enabled.
+//! CPU profiling via `pprof` is Unix-only because `pprof` relies on POSIX libc
+//! types (`pthread_t`, `siginfo_t`, `ucontext_t`). Heap profiling via `dhat` is
+//! cross-platform. No runtime overhead unless enabled.
 
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
+#[cfg(all(feature = "profiling", unix))]
+mod cpu {
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::Path;
 
-use crate::error::{Error, Result};
-use pprof::protos::Message;
+    use crate::error::{Error, Result};
+    use pprof::protos::Message;
 
-/// CPU profiler handle. Drop or call `stop()` to write the profile.
-pub struct CpuProfiler {
-    guard: pprof::ProfilerGuard<'static>,
-}
-
-impl CpuProfiler {
-    /// Start CPU profiling.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the profiler cannot be started by the underlying `pprof` crate.
-    pub fn start() -> Result<Self> {
-        let guard = pprof::ProfilerGuard::new(100)
-            .map_err(|e| Error::runtime_with_source("failed to start CPU profiler", e))?;
-        Ok(Self { guard })
+    /// CPU profiler handle. Drop or call `stop_to_file()` to write the profile.
+    pub struct CpuProfiler {
+        guard: pprof::ProfilerGuard<'static>,
     }
 
-    /// Stop and write a profile in protobuf format compatible with `go tool pprof`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if building the report, encoding, creating the output file,
-    /// or writing the profile fails.
-    pub fn stop_to_file<P: AsRef<Path>>(self, path: P) -> Result<()> {
-        let report = self
-            .guard
-            .report()
-            .build()
-            .map_err(|e| Error::runtime_with_source("failed to build CPU profile report", e))?;
-        let profile = report.pprof().map_err(|e| {
-            Error::runtime_with_source("failed to encode CPU profile to protobuf", e)
-        })?;
-        let mut f = File::create(path.as_ref()).map_err(|e| {
-            Error::io_with_source(
-                format!("failed to create profile file: {}", path.as_ref().display()),
-                e,
-            )
-        })?;
-        // encode_to_vec available via prost::Message (re-exported as pprof::protos::Message)
-        let buf = profile.encode_to_vec();
-        f.write_all(&buf)
-            .map_err(|e| Error::io_with_source("failed to write CPU profile", e))?;
-        Ok(())
+    impl CpuProfiler {
+        /// Start CPU profiling.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the profiler cannot be started by the underlying `pprof` crate.
+        pub fn start() -> Result<Self> {
+            let guard = pprof::ProfilerGuard::new(100)
+                .map_err(|e| Error::runtime_with_source("failed to start CPU profiler", e))?;
+            Ok(Self { guard })
+        }
+
+        /// Stop and write a profile in protobuf format compatible with `go tool pprof`.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if building the report, encoding, creating the output file,
+        /// or writing the profile fails.
+        pub fn stop_to_file<P: AsRef<Path>>(self, path: P) -> Result<()> {
+            let report =
+                self.guard.report().build().map_err(|e| {
+                    Error::runtime_with_source("failed to build CPU profile report", e)
+                })?;
+            let profile = report.pprof().map_err(|e| {
+                Error::runtime_with_source("failed to encode CPU profile to protobuf", e)
+            })?;
+            let mut f = File::create(path.as_ref()).map_err(|e| {
+                Error::io_with_source(
+                    format!("failed to create profile file: {}", path.as_ref().display()),
+                    e,
+                )
+            })?;
+            let buf = profile.encode_to_vec();
+            f.write_all(&buf)
+                .map_err(|e| Error::io_with_source("failed to write CPU profile", e))?;
+            Ok(())
+        }
     }
 }
+
+#[cfg(all(feature = "profiling", unix))]
+pub use cpu::CpuProfiler;
 
 /// Heap profiling support (optional via `heap-profiling`).
 #[cfg(feature = "heap-profiling")]
