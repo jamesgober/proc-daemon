@@ -2,7 +2,7 @@
     <img width="108xpx" src="../media/proc-rs-orange.svg" alt="High-Performance Process EcoSystem for Rust">
     <h1>
         <strong>Process Daemon</strong>
-        <sup><br><sub>API REFERENCE — v1.1.1</sub><br></sup>
+        <sup><br><sub>API REFERENCE — v1.1.2</sub><br></sup>
     </h1>
 </div>
 
@@ -46,14 +46,14 @@ This is the canonical API reference. Versioned release notes live in
 
 ```toml
 [dependencies]
-proc-daemon = "1.1.1"
+proc-daemon = "1.1.2"
 ```
 
 With specific optional features:
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.1.1", features = ["tokio", "metrics", "high-res-timing"] }
+proc-daemon = { version = "1.1.2", features = ["tokio", "metrics", "high-res-timing"] }
 ```
 
 Convenience meta-feature (`tokio`, `metrics`, `console`, `json-logs`,
@@ -61,7 +61,7 @@ Convenience meta-feature (`tokio`, `metrics`, `console`, `json-logs`,
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.1.1", features = ["full"] }
+proc-daemon = { version = "1.1.2", features = ["full"] }
 ```
 
 **MSRV:** Rust 1.82.0.
@@ -839,7 +839,7 @@ Built-in counters / gauges / histograms with snapshot export.
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.1.1", features = ["metrics"] }
+proc-daemon = { version = "1.1.2", features = ["metrics"] }
 ```
 
 ```rust,ignore
@@ -1160,7 +1160,7 @@ Notes:
 
 ---
 
-**Compatibility:** This document is current as of **v1.1.1**.
+**Compatibility:** This document is current as of **v1.1.2**.
 Earlier APIs that have been replaced or augmented are still listed
 (e.g., `Daemon::with_defaults`), with the preferred form noted.
 v2.0.0 will introduce breaking changes; see the local

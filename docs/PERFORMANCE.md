@@ -175,12 +175,12 @@ This is expected and doesn't indicate a problem.
 
 1. **Enable `mimalloc` in production** if your daemon allocates heavily:
    ```toml
-   proc-daemon = { version = "1.1.1", features = ["tokio", "mimalloc"] }
+   proc-daemon = { version = "1.1.2", features = ["tokio", "mimalloc"] }
    ```
 
 2. **Use `high-res-timing` for sub-microsecond operations**:
    ```toml
-   proc-daemon = { version = "1.1.1", features = ["tokio", "high-res-timing"] }
+   proc-daemon = { version = "1.1.2", features = ["tokio", "high-res-timing"] }
    ```
 
 3. **Profile your subsystems** using `--features profiling` (Unix-only;
@@ -189,12 +189,12 @@ This is expected and doesn't indicate a problem.
 
 4. **Enable scheduler hints on Unix** for reduced context switching:
    ```toml
-   proc-daemon = { version = "1.1.1", features = ["tokio", "scheduler-hints-unix"] }
+   proc-daemon = { version = "1.1.2", features = ["tokio", "scheduler-hints-unix"] }
    ```
 
 5. **Use lock-free coordination** for high-frequency inter-subsystem messaging:
    ```toml
-   proc-daemon = { version = "1.1.1", features = ["tokio", "lockfree-coordination"] }
+   proc-daemon = { version = "1.1.2", features = ["tokio", "lockfree-coordination"] }
    ```
 
 6. **Subscribe to `SubsystemEvent` instead of polling

@@ -497,7 +497,9 @@ impl SubsystemManager {
             .ok_or_else(|| Error::subsystem("unknown", "Subsystem not found"))?
             .clone();
 
-        // Get cached subsystem name (zero-copy)
+        // Get cached subsystem name (zero-copy). Only consumed by the
+        // runtime-specific stop_task_* helpers below.
+        #[cfg(any(feature = "tokio", feature = "async-std"))]
         let subsystem_name = self
             .name_cache
             .get(&id)

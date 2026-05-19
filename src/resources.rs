@@ -871,13 +871,14 @@ impl ResourceTracker {
 
 impl Drop for ResourceTracker {
     fn drop(&mut self) {
+        #[cfg(any(feature = "tokio", feature = "async-std"))]
         if let Some(handle) = self.task_handle.take() {
             #[cfg(feature = "tokio")]
             handle.abort();
             // For async-std, dropping the handle is sufficient
             // as it cancels the associated task
             #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-            drop(handle); // Explicitly drop handle to ensure it's used
+            drop(handle);
         }
     }
 }

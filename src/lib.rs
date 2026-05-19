@@ -31,6 +31,7 @@
 //! use proc_daemon::{Daemon, ShutdownHandle};
 //! use std::time::Duration;
 //!
+//! # #[cfg(feature = "tokio")]
 //! async fn my_service(mut shutdown: ShutdownHandle) -> proc_daemon::Result<()> {
 //!     loop {
 //!         tokio::select! {
@@ -46,6 +47,7 @@
 //!     Ok(())
 //! }
 //!
+//! # #[cfg(feature = "tokio")]
 //! #[tokio::main]
 //! async fn main() -> proc_daemon::Result<()> {
 //!     Daemon::new()
@@ -53,6 +55,8 @@
 //!         .run()
 //!         .await
 //! }
+//! # #[cfg(not(feature = "tokio"))]
+//! # fn main() {}
 //! ```
 //!
 //! With explicit configuration:
@@ -61,6 +65,7 @@
 //! use proc_daemon::{Config, Daemon, LogLevel};
 //! use std::time::Duration;
 //!
+//! # #[cfg(feature = "tokio")]
 //! #[tokio::main]
 //! async fn main() -> proc_daemon::Result<()> {
 //!     let config = Config::builder()
@@ -79,6 +84,8 @@
 //!         .run()
 //!         .await
 //! }
+//! # #[cfg(not(feature = "tokio"))]
+//! # fn main() {}
 //! ```
 
 // Optional global allocator: mimalloc

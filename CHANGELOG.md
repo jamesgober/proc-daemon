@@ -12,6 +12,17 @@
 
 - _No changes yet._
 
+## [1.1.2] - 2026-05-19
+
+### Fixed
+
+- **Feature matrix CI**: `cargo test` (which runs `--doc` tests by default) fails under feature combinations that don't include `tokio` (e.g., `cargo test --no-default-features --features "console"`). The lib.rs root doctests refactored in v1.1.1 used `#[tokio::main] async fn main()`, which is unresolvable without the `tokio` crate. Wrapped both doctests with hidden `#[cfg(feature = "tokio")]` / `#[cfg(not(feature = "tokio"))] fn main() {}` shims so they compile cleanly under any feature subset.
+- **Latent runtime-less Windows build**: `SignalHandler::handle_windows_signals` had an empty body when neither `tokio` nor `async-std` was enabled, returning `()` instead of `Result<()>`. Added an explicit `#[cfg(not(any(feature = "tokio", feature = "async-std")))]` no-op branch.
+- **Missing import**: `signal.rs::handle_windows_signals_async_std` referenced `Arc` without importing `std::sync::Arc`. Visible only under `cargo build --no-default-features --features "async-std"` on Windows.
+- **Unused-variable warnings under no-runtime builds**: `subsystem.rs::stop_subsystem`'s `subsystem_name` and `resources.rs::Drop::drop`'s `handle` are only used inside runtime-gated blocks. Both `let` bindings are now correctly cfg-gated to skip computation when neither runtime is enabled.
+
+No source-level migration. `cargo update -p proc-daemon` is sufficient.
+
 ## [1.1.1] - 2026-05-19
 
 ### Fixed
@@ -303,7 +314,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/jamesgober/proc-daemon/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jamesgober/proc-daemon/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jamesgober/proc-daemon/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/jamesgober/proc-daemon/compare/v1.0.0...v1.0.1
