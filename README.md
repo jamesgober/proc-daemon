@@ -23,7 +23,8 @@
 
 **✅ Stable Release** — Production-ready with zero critical vulnerabilities, comprehensive automated testing (36 unit + 5 integration tests passing on default features; 39 + 5 + 4 doc tests under `--all-features`), and cross-platform validation.
 
-**Latest:** v1.1.2 — see the [release notes](./docs/release-notes/v1.1.2.md) and [CHANGELOG.md](./CHANGELOG.md). Prior releases:
+**Latest:** v1.1.3 — see the [release notes](./docs/release-notes/v1.1.3.md) and [CHANGELOG.md](./CHANGELOG.md). Prior releases:
+[v1.1.2](./docs/release-notes/v1.1.2.md) (feature-matrix CI fix) ·
 [v1.1.1](./docs/release-notes/v1.1.1.md) (docs.rs build fix) ·
 [v1.1.0](./docs/release-notes/v1.1.0.md) (performance + ergonomics) ·
 [v1.0.1](./docs/release-notes/v1.0.1.md) (maintenance + audit).
@@ -60,10 +61,10 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-proc-daemon = "1.1.2"
+proc-daemon = "1.1.3"
 
 # Optional features
-proc-daemon = { version = "1.1.2", features = ["full"] }
+proc-daemon = { version = "1.1.3", features = ["full"] }
 ```
 
 **Rust Version:** Requires Rust 1.82.0 or later
@@ -132,7 +133,7 @@ Enable the `high-res-timing` feature to access a fast, monotonic clock backed by
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.1.2", features = ["high-res-timing"] }
+proc-daemon = { version = "1.1.3", features = ["high-res-timing"] }
 ```
 
 ```rust
@@ -152,7 +153,7 @@ Enable the `mimalloc` feature to switch the global allocator for potential perfo
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.1.2", features = ["mimalloc"] }
+proc-daemon = { version = "1.1.3", features = ["mimalloc"] }
 ```
 
 No code changes are required—`proc-daemon` sets the global allocator when the feature is enabled.
@@ -163,7 +164,7 @@ Enable the `lockfree-coordination` feature to use a lock-free MPMC channel for c
 
 ```toml
 [dependencies]
-proc-daemon = { version = "1.1.2", features = ["lockfree-coordination"] }
+proc-daemon = { version = "1.1.3", features = ["lockfree-coordination"] }
 ```
 
 APIs:

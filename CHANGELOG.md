@@ -12,6 +12,20 @@
 
 - _No changes yet._
 
+## [1.1.3] - 2026-10-08
+
+### Fixed
+
+- **Security (`mmap-config` feature)**: the `memmap2` requirement was `0.9`, which still allowed releases affected by RUSTSEC-2026-0186 (unchecked pointer offset). The floor is now `0.9.11`, the first fixed release. `memmap2 0.9.11` needs Rust 1.65, so the crate MSRV stays at 1.82.0.
+- **Lockfile refresh** (`Cargo.lock`; this affects the repo's own CI and dev builds, since downstream users resolve their own dependency versions):
+  - `crossbeam-epoch` 0.9.18 -> 0.9.21: RUSTSEC-2026-0204 (invalid pointer dereference in the `fmt::Pointer` impl for `Atomic` and `Shared`). Reached through `crossbeam`.
+  - `anyhow` 1.0.102 -> 1.0.104: RUSTSEC-2026-0190 (unsound `Error::downcast_mut()`). Reached through `pprof` (`profiling` feature).
+  - `event-listener` 5.4.1 -> 5.4.2: RUSTSEC-2026-0221 (`!Send` tags could cross threads via `StackSlot`). Reached through the optional `async-std` runtime.
+  - `serial_test` (dev-dependency) 3.4.0 -> 3.5.0, which no longer depends on `scc`. This removes RUSTSEC-2026-0205 from the dev tree.
+  - `spin` 0.10.0 (yanked) -> 0.10.1. Reached through `pprof`.
+
+No public API change. No source-level migration. `cargo update -p proc-daemon` is sufficient.
+
 ## [1.1.2] - 2026-05-19
 
 ### Fixed
@@ -314,7 +328,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/jamesgober/proc-daemon/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jamesgober/proc-daemon/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jamesgober/proc-daemon/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/jamesgober/proc-daemon/compare/v1.0.1...v1.1.0
