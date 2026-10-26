@@ -23,6 +23,11 @@
   builds on nightly: every docs.rs build since 1.1.0 failed, even with
   `async-std` left out of the docs features. Builds without `async-std`
   no longer pull that tree in; builds with it are unchanged.
+- A build with neither runtime feature (`tokio`, `async-std`) no longer
+  warns about an unused import and an unused variable.
+- CI: the MSRV check resolves its lockfile with cargo's rust-version-aware
+  resolver instead of hand pins, which a new release of a transitive
+  dependency (indexmap through borsh-derive) had broken.
 
 ## [1.1.3] - 2026-10-08
 
