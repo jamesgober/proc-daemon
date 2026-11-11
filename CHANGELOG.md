@@ -12,6 +12,23 @@
 
 - _No changes yet._
 
+## [1.1.4] - 2026-10-26
+
+### Fixed
+
+- `signal-hook-async-std` is now an optional dependency, enabled only by
+  the `async-std` feature that uses it. It was a plain Unix dependency, so
+  every Linux and macOS build compiled it and its `async-io` 1.x and
+  `rustix` 0.37 tree whatever the features, and `rustix` 0.37 no longer
+  builds on nightly: every docs.rs build since 1.1.0 failed, even with
+  `async-std` left out of the docs features. Builds without `async-std`
+  no longer pull that tree in; builds with it are unchanged.
+- A build with neither runtime feature (`tokio`, `async-std`) no longer
+  warns about an unused import and an unused variable.
+- CI: the MSRV check resolves its lockfile with cargo's rust-version-aware
+  resolver instead of hand pins, which a new release of a transitive
+  dependency (indexmap through borsh-derive) had broken.
+
 ## [1.1.3] - 2026-10-08
 
 ### Fixed
@@ -328,7 +345,8 @@ Initial pre-dev release.
 - Project scaffolding, documentation structure, and license
 
 
-[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/jamesgober/proc-daemon/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/jamesgober/proc-daemon/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/jamesgober/proc-daemon/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/jamesgober/proc-daemon/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/jamesgober/proc-daemon/compare/v1.1.0...v1.1.1

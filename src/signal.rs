@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[allow(unused_imports)]
 use tracing::{debug, info, warn};
 
+#[cfg(any(feature = "tokio", feature = "async-std"))]
 use crate::ShutdownReason;
 
 // No need for these imports

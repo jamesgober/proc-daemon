@@ -1,6 +1,6 @@
 [package]
 name = "proc-daemon"
-version = "1.1.3"
+version = "1.1.4"
 edition = "2021"
 rust-version = "1.82.0"
 readme = "README.md"
@@ -142,7 +142,7 @@ quanta = { version = "0.12", optional = true }
 nix = { version = "0.29", features = ["signal", "sched"] }
 libc = "0.2"
 signal-hook = "0.3"
-signal-hook-async-std = "0.2"
+signal-hook-async-std = { version = "0.2", optional = true }
 # Optional CPU profiling (Unix-only: pprof relies on POSIX libc types)
 pprof = { version = "0.14", features = ["prost-codec"], optional = true }
 
@@ -170,7 +170,7 @@ default = ["tokio", "toml"]
 
 # Runtime selection (mutually exclusive)
 tokio = ["dep:tokio"]
-async-std = ["dep:async-std"]
+async-std = ["dep:async-std", "dep:signal-hook-async-std"]
 
 # Optional features
 metrics = ["dep:metrics"]

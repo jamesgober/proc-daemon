@@ -364,6 +364,12 @@ impl SubsystemManager {
     /// Returns a `Error::subsystem` error if the subsystem with the specified ID is not found.
     #[instrument(skip(self), fields(subsystem_id = id))]
     pub async fn start_subsystem(&self, id: SubsystemId) -> Result<()> {
+        // Used by the runtime that starts it; a build with neither runtime
+        // only checks that the subsystem exists.
+        #[cfg_attr(
+            not(any(feature = "tokio", feature = "async-std")),
+            allow(unused_variables)
+        )]
         let entry = self
             .subsystems
             .get(&id)

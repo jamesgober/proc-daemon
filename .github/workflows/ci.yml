@@ -214,20 +214,20 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # Regenerate Cargo.lock to ensure compatibility
-      - name: Delete existing Cargo.lock
-        run: rm -f Cargo.lock
+      # Regenerate Cargo.lock with the rust-version-aware resolver (cargo
+      # 1.84+, run on stable), which picks every dependency's newest release
+      # that supports our `rust-version`, dev-dependencies included. Cargo
+      # 1.82 has no such resolver, and hand-pinned versions broke whenever a
+      # new release raised a transitive MSRV (indexmap via borsh-derive).
+      - name: Install stable (lockfile resolution only)
+        run: rustup toolchain install stable --profile minimal
 
-      - name: Regenerate Cargo.lock with MSRV
-        run: cargo generate-lockfile
-
-      # Pin transitive deps that have raised their MSRV beyond ours.
-      # Cargo 1.82 lacks MSRV-aware resolver (stabilized in 1.84), so newly
-      # published versions can break the regenerated lockfile. Drop these
-      # pins when MSRV is raised.
-      - name: Pin MSRV-incompatible transitive deps
+      - name: Regenerate Cargo.lock for the MSRV
         run: |
-          cargo update -p indexmap --precise 2.10.0 || true
+          rm -f Cargo.lock
+          cargo +stable generate-lockfile
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
 
       - name: Check MSRV compatibility (lib only, no default features)
         run: cargo check --lib --no-default-features
