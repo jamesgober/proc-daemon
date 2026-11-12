@@ -1163,5 +1163,4 @@ Notes:
 **Compatibility:** This document is current as of **v1.1.3**.
 Earlier APIs that have been replaced or augmented are still listed
 (e.g., `Daemon::with_defaults`), with the preferred form noted.
-v2.0.0 will introduce breaking changes; see the local
-`.dev/V2-ROADMAP.md` for the plan.
+v2.0.0 will introduce breaking changes.
