@@ -36,8 +36,7 @@ the full release history including pre-1.0 lines.
 
 ### v2.0.0 planning
 
-Tracked in [`.dev/V2-ROADMAP.md`](../.dev/V2-ROADMAP.md) (local-only,
-gitignored). The v2 line targets:
+The v2 line targets:
 
 - `async fn` in trait for `Subsystem::run` (drops `Pin<Box<dyn Future>>` boilerplate).
 - Coordinated major dependency bumps (`thiserror 1→2`, `metrics 0.17→0.24`, `notify 6→8`, `toml 0.8→1`, `nix 0.29→0.31`, `windows 0.58→0.62`).
